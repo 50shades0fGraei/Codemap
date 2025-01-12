@@ -1,3 +1,5 @@
+
+# © 2025 50shades0fGraei© 2025 Randall james lujan All rights reserved.. All rights reserved.
 # Codemap
 A directional integration for code to have a 3d architecture
 Creating a custom programming language is an exciting idea. It would allow you to tailor the language to your specific needs and goals, potentially leading to innovations that wouldn't be possible with existing languages.
