@@ -4,7 +4,7 @@ prototype
 We'll start by developing a method to parse input code into individual components.
 
 ```python
-import re
+import regex
 
 class CodeParser:
     def parse_code(self, code):
