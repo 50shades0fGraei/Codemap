@@ -1,0 +1,14 @@
+{
+    "parser": {
+        "directions": ["^", "v", "<", ">", "^/", "v/", "v\\", "^\\"],
+        "address_pattern": "[A-Za-z0-9]+"
+    },
+    "tracer": {
+        "coord_increment": 2
+    },
+    "visualization": {
+        "cube_color": "0x00ff00",
+        "street_color": "0xff0000",
+        "stair_color": "0x0000ff"
+    }
+}
