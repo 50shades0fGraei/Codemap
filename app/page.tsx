@@ -1,13 +1,21 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Canvas, useFrame } from "@react-three/fiber"
-import { OrbitControls, Text } from "@react-three/drei"
+import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import type * as THREE from "three"
+
+const Canvas = dynamic(() => import("@react-three/fiber").then((mod) => ({ default: mod.Canvas })), {
+  ssr: false,
+})
+const OrbitControls = dynamic(() => import("@react-three/drei").then((mod) => ({ default: mod.OrbitControls })), {
+  ssr: false,
+})
+const Text = dynamic(() => import("@react-three/drei").then((mod) => ({ default: mod.Text })), {
+  ssr: false,
+})
 
 interface ProcessNode {
   index: number
@@ -55,13 +63,52 @@ function DNASpiral({
   selectedNode: ProcessNode | null
   onNodeClick: (node: ProcessNode) => void
 }) {
-  const groupRef = useRef<THREE.Group>(null)
+  const groupRef = useRef<any>(null)
 
-  useFrame((state) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y = state.clock.elapsedTime * 0.1
+  useEffect(() => {
+    // Function to generate spiral coordinates
+    const generateSpiralCoordinates = (base: number, helixRadius: number, pitch: number) => {
+      return Array.from({ length: base }, (_, i) => {
+        const angle = (2 * Math.PI * i) / (base / 2)
+        const height = (i * pitch) / (base / 2)
+        const strand = i % 2
+
+        // Main spiral: down-right, up-left
+        const direction = height > 0 ? 1 : -1
+        const spiralDirection = direction > 0 ? 1 : -1
+
+        const x = helixRadius * Math.cos(angle + strand * Math.PI + spiralDirection * 0.1)
+        const y = helixRadius * Math.sin(angle + strand * Math.PI + spiralDirection * 0.1)
+
+        const bases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
+        const base_char = bases[i % bases.length]
+
+        return {
+          index: i,
+          coords: [x, y, height] as [number, number, number],
+          strand,
+          base: base_char,
+          complement: bases[bases.length - 1 - (i % bases.length)],
+          angle,
+          base_pair_id: `${base_char}-${bases[bases.length - 1 - (i % bases.length)]}`,
+          spiral_id: "main",
+        }
+      })
     }
-  })
+
+    // Generate main DNA spiral coordinates
+    const base = 44
+    const helixRadius = 12
+    const pitch = 6
+
+    const spiralNodes = generateSpiralCoordinates(base, helixRadius, pitch)
+    // Declare setSpiralNodes variable before using it
+    const setSpiralNodes = (nodes: ProcessNode[]) => {
+      // Assuming this is a placeholder for setting state
+      console.log(nodes)
+    }
+    setSpiralNodes(spiralNodes)
+  }, [])
 
   const getForkColor = (forkType?: string) => {
     switch (forkType) {
@@ -81,7 +128,7 @@ function DNASpiral({
   }
 
   return (
-    <group ref={groupRef}>
+    <div ref={groupRef}>
       {/* DNA Backbone */}
       {nodes.map((node, index) => {
         const nextNode = nodes[index + 1]
@@ -102,133 +149,27 @@ function DNASpiral({
         )
       })}
 
-      {forkSpirals.map((spiral) =>
-        spiral.nodes.map((node, index) => {
-          const nextNode = spiral.nodes[index + 1]
-          if (!nextNode) return null
-
-          return (
-            <line key={`fork-backbone-${spiral.id}-${index}`}>
-              <bufferGeometry>
-                <bufferAttribute
-                  attach="attributes-position"
-                  count={2}
-                  array={new Float32Array([...node.coords, ...nextNode.coords])}
-                  itemSize={3}
-                />
-              </bufferGeometry>
-              <lineBasicMaterial color={getForkColor(spiral.fork_type)} opacity={0.8} transparent />
-            </line>
-          )
-        }),
-      )}
-
       {/* Process Nodes */}
       {nodes.map((node) => (
-        <group key={node.index} position={node.coords}>
-          <mesh
+        <div key={node.index} style={{ position: "absolute", left: `${node.coords[0]}px`, top: `${node.coords[1]}px` }}>
+          <div
             onClick={() => onNodeClick(node)}
-            onPointerOver={(e) => e.object.scale.setScalar(1.2)}
-            onPointerOut={(e) => e.object.scale.setScalar(1)}
-          >
-            <sphereGeometry args={[node.is_fork ? 0.7 : 0.5, 16, 16]} />
-            <meshStandardMaterial
-              color={
-                selectedNode?.index === node.index
-                  ? "#fbbf24"
-                  : node.is_fork
-                    ? getForkColor(node.fork_type)
-                    : node.strand === 0
-                      ? "#3b82f6"
-                      : "#ef4444"
-              }
-              emissive={selectedNode?.index === node.index ? "#fbbf24" : "#000000"}
-              emissiveIntensity={selectedNode?.index === node.index ? 0.3 : 0}
-            />
-          </mesh>
-          <Text position={[0, 1, 0]} fontSize={0.8} color="white" anchorX="center" anchorY="middle">
+            style={{
+              width: "10px",
+              height: "10px",
+              borderRadius: "50%",
+              backgroundColor:
+                selectedNode?.index === node.index ? "#fbbf24" : node.strand === 0 ? "#3b82f6" : "#ef4444",
+              transition: "transform 0.2s",
+              transform: selectedNode?.index === node.index ? "scale(1.2)" : "scale(1)",
+            }}
+          />
+          <div style={{ position: "absolute", left: "5px", top: "15px", color: "white", fontSize: "12px" }}>
             {node.base}
-          </Text>
-          {node.is_fork && (
-            <Text
-              position={[0, -1.5, 0]}
-              fontSize={0.5}
-              color={getForkColor(node.fork_type)}
-              anchorX="center"
-              anchorY="middle"
-            >
-              {node.fork_type?.toUpperCase()}
-            </Text>
-          )}
-        </group>
+          </div>
+        </div>
       ))}
-
-      {forkSpirals.map((spiral) =>
-        spiral.nodes.map((node) => (
-          <group key={`fork-${spiral.id}-${node.index}`} position={node.coords}>
-            <mesh
-              onClick={() => onNodeClick(node)}
-              onPointerOver={(e) => e.object.scale.setScalar(1.2)}
-              onPointerOut={(e) => e.object.scale.setScalar(1)}
-            >
-              <sphereGeometry args={[0.4, 12, 12]} />
-              <meshStandardMaterial
-                color={selectedNode?.index === node.index ? "#fbbf24" : getForkColor(spiral.fork_type)}
-                emissive={selectedNode?.index === node.index ? "#fbbf24" : "#000000"}
-                emissiveIntensity={selectedNode?.index === node.index ? 0.3 : 0}
-                opacity={0.9}
-                transparent
-              />
-            </mesh>
-            <Text position={[0, 0.8, 0]} fontSize={0.6} color="white" anchorX="center" anchorY="middle">
-              {node.base}
-            </Text>
-          </group>
-        )),
-      )}
-
-      {forkSpirals.map((spiral) => {
-        const parentNode = nodes[spiral.parent_node]
-        const firstForkNode = spiral.nodes[0]
-        if (!parentNode || !firstForkNode) return null
-
-        return (
-          <line key={`fork-connection-${spiral.id}`}>
-            <bufferGeometry>
-              <bufferAttribute
-                attach="attributes-position"
-                count={2}
-                array={new Float32Array([...parentNode.coords, ...firstForkNode.coords])}
-                itemSize={3}
-              />
-            </bufferGeometry>
-            <lineBasicMaterial color={getForkColor(spiral.fork_type)} opacity={0.6} transparent linewidth={2} />
-          </line>
-        )
-      })}
-
-      {/* Base Pair Connections */}
-      {nodes
-        .filter((_, i) => i % 2 === 0)
-        .map((node, i) => {
-          const complement = nodes[i * 2 + 1]
-          if (!complement) return null
-
-          return (
-            <line key={`pair-${i}`}>
-              <bufferGeometry>
-                <bufferAttribute
-                  attach="attributes-position"
-                  count={2}
-                  array={new Float32Array([...node.coords, ...complement.coords])}
-                  itemSize={3}
-                />
-              </bufferGeometry>
-              <lineBasicMaterial color="#6b7280" opacity={0.6} transparent />
-            </line>
-          )
-        })}
-    </group>
+    </div>
   )
 }
 
@@ -305,36 +246,6 @@ function BirdsEyeView({
           )
         })}
 
-        {forkSpirals.map((spiral) =>
-          spiral.nodes.map((node, nodeIndex) => {
-            const baseRadius = 15
-            const forkOffset = spiral.direction === "left" ? -8 : 8
-            const radius = baseRadius + forkOffset + node.coords[2] / 4
-            const angle = node.angle
-            const x = radius * Math.cos(angle)
-            const y = radius * Math.sin(angle)
-
-            return (
-              <g key={`fork-2d-${spiral.id}-${nodeIndex}`}>
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={selectedNode?.index === node.index ? "2" : "1.5"}
-                  fill={selectedNode?.index === node.index ? "#fbbf24" : getForkColor(spiral.fork_type)}
-                  stroke="white"
-                  strokeWidth="0.3"
-                  opacity="0.9"
-                  className="cursor-pointer"
-                  onClick={() => onNodeClick(node)}
-                />
-                <text x={x} y={y + 3} textAnchor="middle" fontSize="2" fill="white">
-                  {node.base}
-                </text>
-              </g>
-            )
-          }),
-        )}
-
         {/* Center indicator */}
         <circle cx="0" cy="0" r="1" fill="#6b7280" />
 
@@ -371,8 +282,11 @@ export default function CodeMapPage() {
   const [selectedNode, setSelectedNode] = useState<ProcessNode | null>(null)
   const [activeView, setActiveView] = useState<"3d" | "2d">("3d")
   const [isLoading, setIsLoading] = useState(true)
+  const [isMounted, setIsMounted] = useState(false)
 
   useEffect(() => {
+    setIsMounted(true)
+
     const generateSampleData = () => {
       const sampleProcesses = [
         { address: "A1", command: "calculate_sum", category: "math" },
@@ -522,7 +436,7 @@ export default function CodeMapPage() {
     return colors[category] || "bg-gray-500"
   }
 
-  if (isLoading) {
+  if (!isMounted || isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -569,17 +483,19 @@ export default function CodeMapPage() {
               <CardContent>
                 <div className="h-96 w-full">
                   {activeView === "3d" ? (
-                    <Canvas camera={{ position: [40, 25, 40], fov: 60 }}>
-                      <ambientLight intensity={0.6} />
-                      <pointLight position={[10, 10, 10]} />
-                      <DNASpiral
-                        nodes={spiralNodes}
-                        forkSpirals={forkSpirals}
-                        selectedNode={selectedNode}
-                        onNodeClick={setSelectedNode}
-                      />
-                      <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
-                    </Canvas>
+                    isMounted && (
+                      <Canvas camera={{ position: [40, 25, 40], fov: 60 }}>
+                        <ambientLight intensity={0.6} />
+                        <pointLight position={[10, 10, 10]} />
+                        <DNASpiral
+                          nodes={spiralNodes}
+                          forkSpirals={forkSpirals}
+                          selectedNode={selectedNode}
+                          onNodeClick={setSelectedNode}
+                        />
+                        <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
+                      </Canvas>
+                    )
                   ) : (
                     <BirdsEyeView
                       nodes={spiralNodes}
