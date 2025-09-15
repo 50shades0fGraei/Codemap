@@ -99,8 +99,8 @@ importers:
         specifier: latest
         version: 9.3.0(@types/react@18.0.0)(expo-asset@12.0.8(expo@54.0.7(@babel/core@7.28.4)(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(expo-file-system@19.0.14(expo@54.0.7(@babel/core@7.28.4)(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0)))(expo-gl@16.0.7(expo@54.0.7(@babel/core@7.28.4)(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(react-dom@18.0.0(react@18.0.0))(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(expo@54.0.7(@babel/core@7.28.4)(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(react-dom@18.0.0(react@18.0.0))(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0)(three@0.180.0)
       '@vercel/analytics':
-        specifier: 1.3.1
-        version: 1.3.1(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0))(react@18.0.0)
+        specifier: latest
+        version: 1.5.0(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0))(react@18.0.0)
       autoprefixer:
         specifier: ^10.4.20
         version: 10.4.20(postcss@8.5.0)
@@ -132,8 +132,8 @@ importers:
         specifier: latest
         version: 16.0.7(expo@54.0.7(@babel/core@7.28.4)(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0))(react-dom@18.0.0(react@18.0.0))(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.0.0)(react@18.0.0))(react@18.0.0)
       geist:
-        specifier: ^1.3.1
-        version: 1.3.1(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0))
+        specifier: latest
+        version: 1.5.1(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0))
       input-otp:
         specifier: 1.4.1
         version: 1.4.1(react-dom@18.0.0(react@18.0.0))(react@18.0.0)
@@ -1972,15 +1972,30 @@ packages:
     peerDependencies:
       react: '>= 16.8.0'
 
-  '@vercel/analytics@1.3.1':
-    resolution: {integrity: sha512-xhSlYgAuJ6Q4WQGkzYTLmXwhYl39sWjoMA3nHxfkvG+WdBT25c563a7QhwwKivEOZtPJXifYHR1m2ihoisbWyA==}
+  '@vercel/analytics@1.5.0':
+    resolution: {integrity: sha512-MYsBzfPki4gthY5HnYN7jgInhAZ7Ac1cYDoRWFomwGHWEX7odTEzbtg9kf/QSo7XEsEAqlQugA6gJ2WS2DEa3g==}
     peerDependencies:
+      '@remix-run/react': ^2
+      '@sveltejs/kit': ^1 || ^2
       next: '>= 13'
-      react: ^18 || ^19
+      react: ^18 || ^19 || ^19.0.0-rc
+      svelte: '>= 4'
+      vue: ^3
+      vue-router: ^4
     peerDependenciesMeta:
+      '@remix-run/react':
+        optional: true
+      '@sveltejs/kit':
+        optional: true
       next:
         optional: true
       react:
+        optional: true
+      svelte:
+        optional: true
+      vue:
+        optional: true
+      vue-router:
         optional: true
 
   '@webgpu/types@0.1.64':
@@ -2719,8 +2734,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  geist@1.3.1:
-    resolution: {integrity: sha512-Q4gC1pBVPN+D579pBaz0TRRnGA4p9UK6elDY/xizXdFk/g4EKR5g0I+4p/Kj6gM0SajDBZ/0FvDV9ey9ud7BWw==}
+  geist@1.5.1:
+    resolution: {integrity: sha512-mAHZxIsL2o3ZITFaBVFBnwyDOw+zNLYum6A6nIjpzCGIO8QtC3V76XF2RnZTyLx1wlDTmMDy8jg3Ib52MIjGvQ==}
     peerDependencies:
       next: '>=13.2.0'
 
@@ -3709,9 +3724,6 @@ packages:
   serve-static@1.16.2:
     resolution: {integrity: sha512-VqpjJZKadQB/PEbEwvFdO43Ax5dFBZ2UECszz8bQ7pi7wt//PWe1P6MN7eCnjsatYtBT6EuiClbjSWP2WrIoTw==}
     engines: {node: '>= 0.8.0'}
-
-  server-only@0.0.1:
-    resolution: {integrity: sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA==}
 
   setprototypeof@1.2.0:
     resolution: {integrity: sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==}
@@ -6414,9 +6426,7 @@ snapshots:
       '@use-gesture/core': 10.3.1
       react: 18.0.0
 
-  '@vercel/analytics@1.3.1(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0))(react@18.0.0)':
-    dependencies:
-      server-only: 0.0.1
+  '@vercel/analytics@1.5.0(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0))(react@18.0.0)':
     optionalDependencies:
       next: 14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0)
       react: 18.0.0
@@ -7165,7 +7175,7 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  geist@1.3.1(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0)):
+  geist@1.5.1(next@14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0)):
     dependencies:
       next: 14.2.16(@babel/core@7.28.4)(react-dom@18.0.0(react@18.0.0))(react@18.0.0)
 
@@ -8281,8 +8291,6 @@ snapshots:
       send: 0.19.0
     transitivePeerDependencies:
       - supports-color
-
-  server-only@0.0.1: {}
 
   setprototypeof@1.2.0: {}
 
