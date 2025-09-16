@@ -16,6 +16,9 @@ const OrbitControls = dynamic(() => import("@react-three/drei").then((mod) => ({
 const Text = dynamic(() => import("@react-three/drei").then((mod) => ({ default: mod.Text })), {
   ssr: false,
 })
+const Html = dynamic(() => import("@react-three/drei").then((mod) => ({ default: mod.Html })), {
+  ssr: false,
+})
 
 interface ProcessNode {
   index: number
@@ -128,7 +131,7 @@ function DNASpiral({
   }
 
   return (
-    <div ref={groupRef}>
+    <group ref={groupRef}>
       {/* DNA Backbone */}
       {nodes.map((node, index) => {
         const nextNode = nodes[index + 1]
@@ -151,25 +154,78 @@ function DNASpiral({
 
       {/* Process Nodes */}
       {nodes.map((node) => (
-        <div key={node.index} style={{ position: "absolute", left: `${node.coords[0]}px`, top: `${node.coords[1]}px` }}>
-          <div
-            onClick={() => onNodeClick(node)}
-            style={{
-              width: "10px",
-              height: "10px",
-              borderRadius: "50%",
-              backgroundColor:
-                selectedNode?.index === node.index ? "#fbbf24" : node.strand === 0 ? "#3b82f6" : "#ef4444",
-              transition: "transform 0.2s",
-              transform: selectedNode?.index === node.index ? "scale(1.2)" : "scale(1)",
-            }}
-          />
-          <div style={{ position: "absolute", left: "5px", top: "15px", color: "white", fontSize: "12px" }}>
-            {node.base}
-          </div>
-        </div>
+        <group key={node.index} position={node.coords}>
+          <mesh onClick={() => onNodeClick(node)}>
+            <sphereGeometry args={[selectedNode?.index === node.index ? 1.2 : 1, 16, 16]} />
+            <meshStandardMaterial
+              color={selectedNode?.index === node.index ? "#fbbf24" : node.strand === 0 ? "#3b82f6" : "#ef4444"}
+            />
+          </mesh>
+          <Html distanceFactor={10}>
+            <div
+              style={{
+                color: "white",
+                fontSize: "12px",
+                fontWeight: "bold",
+                textAlign: "center",
+                pointerEvents: "none",
+                transform: "translate(-50%, -50%)",
+              }}
+            >
+              {node.base}
+            </div>
+          </Html>
+        </group>
       ))}
-    </div>
+
+      {/* Fork Spiral Nodes */}
+      {forkSpirals.map((spiral) =>
+        spiral.nodes.map((node) => (
+          <group key={`fork-${spiral.id}-${node.index}`} position={node.coords}>
+            <mesh onClick={() => onNodeClick(node)}>
+              <boxGeometry args={[1.5, 1.5, 1.5]} />
+              <meshStandardMaterial
+                color={selectedNode?.index === node.index ? "#fbbf24" : getForkColor(spiral.fork_type)}
+              />
+            </mesh>
+            <Html distanceFactor={10}>
+              <div
+                style={{
+                  color: "white",
+                  fontSize: "10px",
+                  fontWeight: "bold",
+                  textAlign: "center",
+                  pointerEvents: "none",
+                  transform: "translate(-50%, -50%)",
+                }}
+              >
+                {node.base}
+              </div>
+            </Html>
+          </group>
+        )),
+      )}
+
+      {/* Fork Connection Lines */}
+      {forkSpirals.map((spiral) => {
+        const parentNode = nodes[spiral.parent_node]
+        if (!parentNode) return null
+
+        return spiral.nodes.map((forkNode, index) => (
+          <line key={`fork-connection-${spiral.id}-${index}`}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={2}
+                array={new Float32Array([...parentNode.coords, ...forkNode.coords])}
+                itemSize={3}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial color={getForkColor(spiral.fork_type)} linewidth={2} />
+          </line>
+        ))
+      })}
+    </group>
   )
 }
 
