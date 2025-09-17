@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import type React from "react"
+
+import { useState, useEffect } from "react"
 import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 const Canvas = dynamic(() => import("@react-three/fiber").then((mod) => ({ default: mod.Canvas })), {
   ssr: false,
@@ -35,6 +34,10 @@ interface ProcessNode {
   parent_index?: number
   fork_direction?: "left" | "right"
   spiral_id?: string
+  isDuplicate?: boolean
+  referenceTo?: number
+  duplicateCount?: number
+  references?: number[]
 }
 
 interface ForkSpiral {
@@ -55,283 +58,546 @@ interface MapData {
   category?: string
 }
 
-function DNASpiral({
-  nodes,
-  forkSpirals,
-  selectedNode,
-  onNodeClick,
-}: {
-  nodes: ProcessNode[]
-  forkSpirals: ForkSpiral[]
-  selectedNode: ProcessNode | null
-  onNodeClick: (node: ProcessNode) => void
-}) {
-  const groupRef = useRef<any>(null)
+interface FunctionBlock {
+  id: string
+  name: string
+  startAddress: number
+  endAddress: number
+  addresses: number[]
+  category: string
+  description: string
+  lineComposition: string[]
+  originalLines: string[]
+  optimizedLines: string[]
+  duplicateReplacements: { [key: string]: string }
+}
 
-  useEffect(() => {
-    // Function to generate spiral coordinates
-    const generateSpiralCoordinates = (base: number, helixRadius: number, pitch: number) => {
-      return Array.from({ length: base }, (_, i) => {
-        const angle = (2 * Math.PI * i) / (base / 2)
-        const height = (i * pitch) / (base / 2)
-        const strand = i % 2
+interface FileAnalysis {
+  fileName: string
+  fileType: string
+  totalLines: number
+  duplicateLines: number
+  uniqueLines: number
+  energySavings: number
+  optimizationPotential: number
+  functionBlocks: number
+  categories: { [key: string]: number }
+}
 
-        // Main spiral: down-right, up-left
-        const direction = height > 0 ? 1 : -1
-        const spiralDirection = direction > 0 ? 1 : -1
+interface ProjectAnalysis {
+  totalFiles: number
+  totalLines: number
+  totalDuplicates: number
+  overallEnergySavings: number
+  optimizationPotential: number
+  fileAnalyses: FileAnalysis[]
+  globalDuplicates: { [key: string]: string[] }
+}
 
-        const x = helixRadius * Math.cos(angle + strand * Math.PI + spiralDirection * 0.1)
-        const y = helixRadius * Math.sin(angle + strand * Math.PI + spiralDirection * 0.1)
+function detectFunctionBlocks(processes: ProcessNode[]): FunctionBlock[] {
+  const blocks: FunctionBlock[] = []
+  let currentBlock: Partial<FunctionBlock> | null = null
 
-        const bases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
-        const base_char = bases[i % bases.length]
+  const lineMap = new Map<string, number>()
+  processes.forEach((process, index) => {
+    const normalizedCommand = process.command?.toLowerCase().trim() || ""
+    if (normalizedCommand && !lineMap.has(normalizedCommand)) {
+      lineMap.set(normalizedCommand, index)
+    }
+  })
 
-        return {
-          index: i,
-          coords: [x, y, height] as [number, number, number],
-          strand,
-          base: base_char,
-          complement: bases[bases.length - 1 - (i % bases.length)],
-          angle,
-          base_pair_id: `${base_char}-${bases[bases.length - 1 - (i % bases.length)]}`,
-          spiral_id: "main",
-        }
-      })
+  processes.forEach((process, index) => {
+    if (process.category === "function" || process.fork_type === "function_call") {
+      if (currentBlock) {
+        const blockAddresses = Array.from(
+          { length: index - 1 - currentBlock.startAddress! + 1 },
+          (_, i) => currentBlock.startAddress! + i,
+        )
+
+        const { lineComposition, originalLines, optimizedLines, duplicateReplacements } = createLineComposition(
+          blockAddresses,
+          processes,
+          lineMap,
+        )
+
+        blocks.push({
+          ...currentBlock,
+          endAddress: index - 1,
+          addresses: blockAddresses,
+          lineComposition,
+          originalLines,
+          optimizedLines,
+          duplicateReplacements,
+        } as FunctionBlock)
+      }
+
+      currentBlock = {
+        id: `func-${blocks.length + 1}`,
+        name: process.command?.replace(/def |function /, "") || `Function ${blocks.length + 1}`,
+        startAddress: index,
+        category: process.category || "general",
+        description: `Function block starting at A${index + 1}`,
+      }
     }
 
-    // Generate main DNA spiral coordinates
-    const base = 44
-    const helixRadius = 12
-    const pitch = 6
+    if (process.command?.includes("return") || process.fork_type === "merge") {
+      if (currentBlock) {
+        const blockAddresses = Array.from(
+          { length: index - currentBlock.startAddress! + 1 },
+          (_, i) => currentBlock.startAddress! + i,
+        )
 
-    const spiralNodes = generateSpiralCoordinates(base, helixRadius, pitch)
-    // Declare setSpiralNodes variable before using it
-    const setSpiralNodes = (nodes: ProcessNode[]) => {
-      // Assuming this is a placeholder for setting state
-      console.log(nodes)
-    }
-    setSpiralNodes(spiralNodes)
-  }, [])
+        const { lineComposition, originalLines, optimizedLines, duplicateReplacements } = createLineComposition(
+          blockAddresses,
+          processes,
+          lineMap,
+        )
 
-  const getForkColor = (forkType?: string) => {
-    switch (forkType) {
-      case "if":
-        return "#10b981" // green
-      case "else":
-        return "#f59e0b" // amber
-      case "loop":
-        return "#8b5cf6" // violet
-      case "function_call":
-        return "#06b6d4" // cyan
-      case "merge":
-        return "#f97316" // orange
-      default:
-        return "#6b7280" // gray
+        blocks.push({
+          ...currentBlock,
+          endAddress: index,
+          addresses: blockAddresses,
+          lineComposition,
+          originalLines,
+          optimizedLines,
+          duplicateReplacements,
+        } as FunctionBlock)
+        currentBlock = null
+      }
     }
+  })
+
+  if (currentBlock) {
+    const blockAddresses = Array.from(
+      { length: processes.length - currentBlock.startAddress! },
+      (_, i) => currentBlock.startAddress! + i,
+    )
+
+    const { lineComposition, originalLines, optimizedLines, duplicateReplacements } = createLineComposition(
+      blockAddresses,
+      processes,
+      lineMap,
+    )
+
+    blocks.push({
+      ...currentBlock,
+      endAddress: processes.length - 1,
+      addresses: blockAddresses,
+      lineComposition,
+      originalLines,
+      optimizedLines,
+      duplicateReplacements,
+    } as FunctionBlock)
   }
 
-  return (
-    <group ref={groupRef}>
-      {/* DNA Backbone */}
-      {nodes.map((node, index) => {
-        const nextNode = nodes[index + 1]
-        if (!nextNode || node.strand !== nextNode.strand) return null
+  return blocks
+}
 
-        return (
-          <line key={`backbone-${index}`}>
-            <bufferGeometry>
-              <bufferAttribute
-                attach="attributes-position"
-                count={2}
-                array={new Float32Array([...node.coords, ...nextNode.coords])}
-                itemSize={3}
-              />
-            </bufferGeometry>
-            <lineBasicMaterial color={node.strand === 0 ? "#3b82f6" : "#ef4444"} />
-          </line>
-        )
+function createLineComposition(
+  addresses: number[],
+  processes: ProcessNode[],
+  lineMap: Map<string, number>,
+): {
+  lineComposition: string[]
+  originalLines: string[]
+  optimizedLines: string[]
+  duplicateReplacements: { [key: string]: string }
+} {
+  const originalLines: string[] = []
+  const optimizedLines: string[] = []
+  const duplicateReplacements: { [key: string]: string } = {}
+
+  addresses.forEach((addressIndex) => {
+    const process = processes[addressIndex]
+    const normalizedCommand = process.command?.toLowerCase().trim() || ""
+    const lineRef = `a${addressIndex + 1}`
+
+    originalLines.push(lineRef)
+
+    const firstOccurrence = lineMap.get(normalizedCommand)
+    if (firstOccurrence !== undefined && firstOccurrence < addressIndex) {
+      const originalRef = `a${firstOccurrence + 1}`
+      optimizedLines.push(originalRef)
+      duplicateReplacements[lineRef] = originalRef
+    } else {
+      optimizedLines.push(lineRef)
+    }
+  })
+
+  return {
+    lineComposition: optimizedLines,
+    originalLines,
+    optimizedLines,
+    duplicateReplacements,
+  }
+}
+
+function detectCodeDuplicates(processes: ProcessNode[]): ProcessNode[] {
+  const codeMap = new Map<string, ProcessNode[]>()
+  const uniqueProcesses: ProcessNode[] = []
+
+  processes.forEach((process) => {
+    const normalizedCommand = process.command?.toLowerCase().trim() || ""
+    if (!codeMap.has(normalizedCommand)) {
+      codeMap.set(normalizedCommand, [])
+    }
+    codeMap.get(normalizedCommand)!.push(process)
+  })
+
+  codeMap.forEach((duplicates, command) => {
+    if (duplicates.length > 1) {
+      const primary = duplicates[0]
+      uniqueProcesses.push({
+        ...primary,
+        isDuplicate: false,
+        duplicateCount: duplicates.length,
+        references: duplicates.slice(1).map((d) => d.index),
+      })
+
+      duplicates.slice(1).forEach((duplicate) => {
+        uniqueProcesses.push({
+          ...duplicate,
+          isDuplicate: true,
+          referenceTo: primary.index,
+          command: `→ REF A${primary.index + 1}: ${command}`,
+        })
+      })
+    } else {
+      uniqueProcesses.push({
+        ...duplicates[0],
+        isDuplicate: false,
+      })
+    }
+  })
+
+  return uniqueProcesses.sort((a, b) => a.index - b.index)
+}
+
+function DNASpiral({ nodes, forkSpirals, selectedNode, onNodeClick, onAddressClick }: any) {
+  return (
+    <group>
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={2}
+            array={new Float32Array([0, 25, 0, 0, -25, 0])}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#00ff00" linewidth={4} />
+      </line>
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={2}
+            array={new Float32Array([2, 25, 0, 2, -25, 0])}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#00ff00" linewidth={4} />
+      </line>
+
+      {nodes.map((node, index) => {
+        const totalHeight = 50
+        const heightStep = totalHeight / Math.max(nodes.length, 8)
+        const yPos = 25 - index * heightStep * 2
+
+        const spiralRadius = 12
+        const spiralTurns = 2.5
+        const angle = (index / nodes.length) * spiralTurns * 2 * Math.PI
+
+        const xPos = spiralRadius * Math.cos(angle)
+        const zPos = spiralRadius * Math.sin(angle)
+
+        const nextIndex = index + 1
+        if (nextIndex < nodes.length) {
+          const nextYPos = 25 - nextIndex * heightStep * 2
+          const nextAngle = (nextIndex / nodes.length) * spiralTurns * 2 * Math.PI
+          const nextXPos = spiralRadius * Math.cos(nextAngle)
+          const nextZPos = spiralRadius * Math.sin(nextAngle)
+
+          return (
+            <group key={`spiral-bridge-${index}`}>
+              <line>
+                <bufferGeometry>
+                  <bufferAttribute
+                    attach="attributes-position"
+                    count={2}
+                    array={new Float32Array([xPos, yPos, zPos, nextXPos, nextYPos, nextZPos])}
+                    itemSize={3}
+                  />
+                </bufferGeometry>
+                <lineBasicMaterial color="white" linewidth={1} />
+              </line>
+
+              <mesh
+                position={[xPos, yPos, zPos]}
+                onClick={() => onNodeClick(node)}
+                onPointerOver={(e) => e.stopPropagation()}
+              >
+                <sphereGeometry args={[1.2]} />
+                <meshBasicMaterial
+                  color={
+                    node.isDuplicate
+                      ? "#ff6b6b"
+                      : selectedNode?.index === node.index
+                        ? "#fbbf24"
+                        : node.duplicateCount > 1
+                          ? "#4ecdc4"
+                          : "#ffffff"
+                  }
+                  transparent
+                  opacity={0.9}
+                />
+              </mesh>
+
+              <line>
+                <bufferGeometry>
+                  <bufferAttribute
+                    attach="attributes-position"
+                    count={2}
+                    array={new Float32Array([xPos, yPos, zPos, 1, yPos, 0])}
+                    itemSize={3}
+                  />
+                </bufferGeometry>
+                <lineBasicMaterial
+                  color={node.isDuplicate ? "#ff6b6b" : "#00ff00"}
+                  linewidth={3}
+                  opacity={selectedNode?.index === node.index ? 1.0 : 0.4}
+                  transparent
+                />
+              </line>
+
+              {Html && (
+                <Html position={[xPos + 2, yPos + 1.5, zPos]}>
+                  <div
+                    className={`text-white text-sm font-mono px-2 py-1 rounded cursor-pointer transition-all ${
+                      selectedNode?.index === node.index
+                        ? "bg-yellow-600 border border-yellow-400"
+                        : node.isDuplicate
+                          ? "bg-red-600 bg-opacity-80 hover:bg-red-500"
+                          : node.duplicateCount > 1
+                            ? "bg-teal-600 bg-opacity-80 hover:bg-teal-500"
+                            : "bg-black bg-opacity-70 hover:bg-gray-700"
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onAddressClick?.(node, index)
+                    }}
+                  >
+                    A{index + 1}
+                    {node.duplicateCount > 1 && (
+                      <span className="ml-1 text-xs text-teal-300">×{node.duplicateCount}</span>
+                    )}
+                    {node.isDuplicate && <span className="ml-1 text-xs text-red-300">→</span>}
+                  </div>
+                </Html>
+              )}
+
+              {selectedNode?.index === node.index && (
+                <>
+                  <mesh position={[xPos * 0.7, yPos, zPos * 0.7]}>
+                    <sphereGeometry args={[0.4]} />
+                    <meshBasicMaterial color="#00ff00" />
+                  </mesh>
+                  <mesh position={[xPos * 0.4, yPos, zPos * 0.4]}>
+                    <sphereGeometry args={[0.3]} />
+                    <meshBasicMaterial color="#00ff00" transparent opacity={0.7} />
+                  </mesh>
+                </>
+              )}
+            </group>
+          )
+        }
+        return null
       })}
 
-      {/* Process Nodes */}
-      {nodes.map((node) => (
-        <group key={node.index} position={node.coords}>
-          <mesh onClick={() => onNodeClick(node)}>
-            <sphereGeometry args={[selectedNode?.index === node.index ? 1.2 : 1, 16, 16]} />
-            <meshStandardMaterial
-              color={selectedNode?.index === node.index ? "#fbbf24" : node.strand === 0 ? "#3b82f6" : "#ef4444"}
-            />
+      {Array.from({ length: 12 }, (_, i) => {
+        const yPos = 22 - i * 4
+        return (
+          <mesh key={`pipeline-flow-${i}`} position={[1, yPos, 0]}>
+            <sphereGeometry args={[0.25]} />
+            <meshBasicMaterial color="#00ff00" transparent opacity={selectedNode ? 0.9 - i * 0.05 : 0.3} />
           </mesh>
-          <Html distanceFactor={10}>
-            <div
-              style={{
-                color: "white",
-                fontSize: "12px",
-                fontWeight: "bold",
-                textAlign: "center",
-                pointerEvents: "none",
-                transform: "translate(-50%, -50%)",
-              }}
-            >
-              {node.base}
-            </div>
-          </Html>
-        </group>
-      ))}
-
-      {/* Fork Spiral Nodes */}
-      {forkSpirals.map((spiral) =>
-        spiral.nodes.map((node) => (
-          <group key={`fork-${spiral.id}-${node.index}`} position={node.coords}>
-            <mesh onClick={() => onNodeClick(node)}>
-              <boxGeometry args={[1.5, 1.5, 1.5]} />
-              <meshStandardMaterial
-                color={selectedNode?.index === node.index ? "#fbbf24" : getForkColor(spiral.fork_type)}
-              />
-            </mesh>
-            <Html distanceFactor={10}>
-              <div
-                style={{
-                  color: "white",
-                  fontSize: "10px",
-                  fontWeight: "bold",
-                  textAlign: "center",
-                  pointerEvents: "none",
-                  transform: "translate(-50%, -50%)",
-                }}
-              >
-                {node.base}
-              </div>
-            </Html>
-          </group>
-        )),
-      )}
-
-      {/* Fork Connection Lines */}
-      {forkSpirals.map((spiral) => {
-        const parentNode = nodes[spiral.parent_node]
-        if (!parentNode) return null
-
-        return spiral.nodes.map((forkNode, index) => (
-          <line key={`fork-connection-${spiral.id}-${index}`}>
-            <bufferGeometry>
-              <bufferAttribute
-                attach="attributes-position"
-                count={2}
-                array={new Float32Array([...parentNode.coords, ...forkNode.coords])}
-                itemSize={3}
-              />
-            </bufferGeometry>
-            <lineBasicMaterial color={getForkColor(spiral.fork_type)} linewidth={2} />
-          </line>
-        ))
+        )
       })}
     </group>
   )
 }
 
-function BirdsEyeView({
-  nodes,
-  forkSpirals,
-  selectedNode,
-  onNodeClick,
-}: {
-  nodes: ProcessNode[]
-  forkSpirals: ForkSpiral[]
-  selectedNode: ProcessNode | null
-  onNodeClick: (node: ProcessNode) => void
-}) {
-  const getForkColor = (forkType?: string) => {
-    switch (forkType) {
-      case "if":
-        return "#10b981"
-      case "else":
-        return "#f59e0b"
-      case "loop":
-        return "#8b5cf6"
-      case "function_call":
-        return "#06b6d4"
-      case "merge":
-        return "#f97316"
-      default:
-        return "#6b7280"
-    }
-  }
-
+function BirdsEyeView({ nodes, selectedNode, executingProcess, functionBlocks, expandedBlocks }: any) {
   return (
-    <div className="relative w-full h-96 bg-gray-900 rounded-lg overflow-hidden">
-      <svg className="w-full h-full" viewBox="-60 -60 120 120">
-        {/* Grid */}
-        <defs>
-          <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#374151" strokeWidth="0.5" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
+    <div className="w-full h-full bg-gray-900 relative overflow-hidden">
+      <svg width="100%" height="100%" viewBox="0 0 400 400" className="absolute inset-0">
+        <line x1="200" y1="50" x2="200" y2="350" stroke="#00ff00" strokeWidth="4" />
 
-        {/* Main Process Nodes */}
-        {nodes.map((node) => {
-          const radius = 15 + node.coords[2] / 3
-          const angle = node.angle
-          const x = radius * Math.cos(angle)
-          const y = radius * Math.sin(angle)
+        {functionBlocks.map((block: FunctionBlock, blockIndex: number) => {
+          const isExpanded = expandedBlocks.includes(block.id)
+          const cycloneRadius = isExpanded ? 80 + blockIndex * 10 : 40 + blockIndex * 5
+          const centerY = 100 + blockIndex * 60
 
           return (
-            <g key={node.index}>
+            <g key={block.id}>
               <circle
-                cx={x}
-                cy={y}
-                r={node.is_fork ? "3" : selectedNode?.index === node.index ? "2.5" : "2"}
-                fill={
-                  selectedNode?.index === node.index
-                    ? "#fbbf24"
-                    : node.is_fork
-                      ? getForkColor(node.fork_type)
-                      : node.strand === 0
-                        ? "#3b82f6"
-                        : "#ef4444"
-                }
-                stroke="white"
-                strokeWidth="0.5"
-                className="cursor-pointer"
-                onClick={() => onNodeClick(node)}
+                cx="200"
+                cy={centerY}
+                r={cycloneRadius}
+                fill="none"
+                stroke={isExpanded ? "#00ff00" : "#666"}
+                strokeWidth={isExpanded ? 3 : 1}
+                strokeDasharray={isExpanded ? "5,5" : "2,2"}
+                className={isExpanded ? "animate-spin" : ""}
+                style={{ animationDuration: "4s" }}
               />
-              <text x={x} y={y + 5} textAnchor="middle" fontSize="2.5" fill="white">
-                {node.base}
+
+              {block.addresses.map((addressIndex, i) => {
+                const node = nodes[addressIndex]
+                if (!node) return null
+
+                const subRadius = cycloneRadius * 0.3
+                const angle = (i / block.addresses.length) * 2 * Math.PI
+                const subX = 200 + cycloneRadius * 0.7 * Math.cos(angle)
+                const subY = centerY + cycloneRadius * 0.7 * Math.sin(angle)
+
+                return (
+                  <g key={`sub-${addressIndex}`}>
+                    <circle
+                      cx={subX}
+                      cy={subY}
+                      r={subRadius}
+                      fill="none"
+                      stroke={node.isDuplicate ? "#ff6b6b" : "#4ecdc4"}
+                      strokeWidth="1"
+                      strokeDasharray="1,1"
+                    />
+
+                    <circle
+                      cx={subX}
+                      cy={subY}
+                      r={selectedNode?.index === addressIndex ? 8 : 4}
+                      fill={
+                        executingProcess?.index === addressIndex
+                          ? "#fbbf24"
+                          : selectedNode?.index === addressIndex
+                            ? "#00ff00"
+                            : node.isDuplicate
+                              ? "#ff6b6b"
+                              : "#ffffff"
+                      }
+                      className={executingProcess?.index === addressIndex ? "animate-pulse" : ""}
+                    />
+
+                    <text x={subX} y={subY - 12} textAnchor="middle" className="text-xs fill-white font-mono">
+                      A{addressIndex + 1}
+                    </text>
+                  </g>
+                )
+              })}
+
+              <text x="200" y={centerY} textAnchor="middle" className="text-sm fill-white font-mono">
+                {block.name}
               </text>
             </g>
           )
         })}
-
-        {/* Center indicator */}
-        <circle cx="0" cy="0" r="1" fill="#6b7280" />
-
-        <g transform="translate(-55, -55)">
-          <text x="0" y="0" fontSize="3" fill="white" fontWeight="bold">
-            Fork Types:
-          </text>
-          <circle cx="0" cy="5" r="1" fill="#10b981" />
-          <text x="3" y="7" fontSize="2.5" fill="white">
-            IF
-          </text>
-          <circle cx="0" cy="10" r="1" fill="#f59e0b" />
-          <text x="3" y="12" fontSize="2.5" fill="white">
-            ELSE
-          </text>
-          <circle cx="0" cy="15" r="1" fill="#8b5cf6" />
-          <text x="3" y="17" fontSize="2.5" fill="white">
-            LOOP
-          </text>
-          <circle cx="0" cy="20" r="1" fill="#06b6d4" />
-          <text x="3" y="22" fontSize="2.5" fill="white">
-            CALL
-          </text>
-        </g>
       </svg>
     </div>
   )
 }
 
-export default function CodeMapPage() {
+function parseCodeToProcesses(code: string): ProcessNode[] {
+  const lines = code.split("\n").filter((line) => line.trim())
+  const processes: ProcessNode[] = []
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim()
+    let category = "general"
+    let fork_type: "if" | "else" | "loop" | "function_call" | "merge" | undefined
+    let is_fork = false
+
+    if (trimmed.includes("def ") || trimmed.includes("function ")) {
+      category = "function"
+      fork_type = "function_call"
+      is_fork = true
+    } else if (trimmed.includes("if ") || trimmed.includes("if(")) {
+      category = "control"
+      fork_type = "if"
+      is_fork = true
+    } else if (trimmed.includes("else")) {
+      category = "control"
+      fork_type = "else"
+      is_fork = true
+    } else if (trimmed.includes("for ") || trimmed.includes("while ")) {
+      category = "control"
+      fork_type = "loop"
+      is_fork = true
+    } else if (trimmed.includes("return") || trimmed.includes("merge")) {
+      category = "control"
+      fork_type = "merge"
+      is_fork = true
+    } else if (trimmed.includes("calculate") || trimmed.includes("compute")) {
+      category = "math"
+    } else if (trimmed.includes("data") || trimmed.includes("fetch")) {
+      category = "data"
+    }
+
+    const totalHeight = 50
+    const heightStep = totalHeight / lines.length
+    const yPos = 25 - index * heightStep
+
+    const spiralRadius = 8 + Math.sin(index * 0.3) * 2
+    const spiralTurns = 4
+    const angle = (index / lines.length) * spiralTurns * 2 * Math.PI
+
+    let strandOffset = 0
+    if (category === "control") strandOffset = Math.PI * 0.5
+    else if (category === "math" || category === "analysis") strandOffset = Math.PI
+    else if (category === "function") strandOffset = Math.PI * 1.5
+
+    const xPos = spiralRadius * Math.cos(angle + strandOffset)
+    const zPos = spiralRadius * Math.sin(angle + strandOffset)
+
+    const bases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
+    const base_char = bases[index % bases.length]
+
+    processes.push({
+      index,
+      coords: [xPos, yPos, zPos] as [number, number, number],
+      strand: index % 2,
+      base: base_char,
+      complement: bases[bases.length - 1 - (index % bases.length)],
+      angle: angle + strandOffset,
+      base_pair_id: `${base_char}-${bases[bases.length - 1 - (index % bases.length)]}`,
+      command: trimmed,
+      category,
+      is_fork,
+      fork_type,
+      spiral_id: "main",
+    })
+  })
+
+  return processes
+}
+
+function generateForkSpirals(nodes: ProcessNode[]): ForkSpiral[] {
+  return []
+}
+
+function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+  const file = event.target.files?.[0]
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const code = e.target?.result as string
+      console.log(code)
+    }
+    reader.readAsText(file)
+  }
+}
+
+export default function CodeMapDNASpiral() {
   const [mapData, setMapData] = useState<MapData[]>([])
   const [spiralNodes, setSpiralNodes] = useState<ProcessNode[]>([])
   const [forkSpirals, setForkSpirals] = useState<ForkSpiral[]>([])
@@ -339,143 +605,286 @@ export default function CodeMapPage() {
   const [activeView, setActiveView] = useState<"3d" | "2d">("3d")
   const [isLoading, setIsLoading] = useState(true)
   const [isMounted, setIsMounted] = useState(false)
+  const [inputCode, setInputCode] = useState("")
+  const [activeTab, setActiveTab] = useState<"visualizer" | "input">("input")
+  const [terminalInput, setTerminalInput] = useState("")
+  const [terminalHistory, setTerminalHistory] = useState<string[]>([
+    "CodeMap Terminal v1.0 - Base-44 Process Addressing System",
+    "Type 'help' for available commands",
+    "Use addresses like A1, A2, IF-BRANCH-1, LOOP-BRANCH-2 to call processes",
+    "",
+  ])
+  const [executingProcess, setExecutingProcess] = useState<ProcessNode | null>(null)
+  const [executionLog, setExecutionLog] = useState<string[]>([])
+  const [currentExecutingLine, setCurrentExecutingLine] = useState<number | null>(null)
+  const [selectedAddress, setSelectedAddress] = useState<{ node: ProcessNode; index: number } | null>(null)
+  const [executionSequence, setExecutionSequence] = useState<number[]>([])
+  const [codeDetails, setCodeDetails] = useState<string>("")
 
-  useEffect(() => {
-    setIsMounted(true)
+  const [functionBlocks, setFunctionBlocks] = useState<FunctionBlock[]>([])
+  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([])
+  const [runningBlock, setRunningBlock] = useState<FunctionBlock | null>(null)
 
-    const generateSampleData = () => {
-      const sampleProcesses = [
-        { address: "A1", command: "calculate_sum", category: "math" },
-        { address: "A2", command: "if market_open", category: "control", is_fork: true, fork_type: "if" },
-        { address: "A3", command: "allocate_pyramid", category: "crypto" },
-        { address: "A4", command: "calculate_cr", category: "crypto" },
-        { address: "A5", command: "else handle_closed", category: "control", is_fork: true, fork_type: "else" },
-        { address: "A6", command: "calculate_moving_averages", category: "analysis" },
-        { address: "A7", command: "for each_stock", category: "control", is_fork: true, fork_type: "loop" },
-        { address: "A8", command: "detect_market_sentiment", category: "ai" },
-        { address: "A9", command: "execute_trades", category: "execution" },
-        { address: "A10", command: "merge_results", category: "control", is_fork: true, fork_type: "merge" },
-      ]
+  const [loadedFiles, setLoadedFiles] = useState<File[]>([])
+  const [projectAnalysis, setProjectAnalysis] = useState<ProjectAnalysis | null>(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [showFileLoader, setShowFileLoader] = useState(false)
+  const [dragActive, setDragActive] = useState(false)
 
-      // Generate main DNA spiral coordinates
-      const base = 44
-      const helixRadius = 12
-      const pitch = 6
+  const getForkColor = (forkType?: string) => {
+    switch (forkType) {
+      case "if":
+        return "#ff1493"
+      case "else":
+        return "#00ff00"
+      case "loop":
+        return "#0000ff"
+      case "function_call":
+        return "#ff0000"
+      case "merge":
+        return "#000000"
+      default:
+        return "#6b7280"
+    }
+  }
 
-      const nodes: ProcessNode[] = sampleProcesses.map((process, i) => {
-        const angle = (2 * Math.PI * i) / (base / 2)
-        const height = (i * pitch) / (base / 2)
-        const strand = i % 2
+  const handleAddressClick = (node: ProcessNode, index: number) => {
+    setSelectedAddress({ node, index })
+    setSelectedNode(node)
 
-        // Main spiral: down-right, up-left
-        const direction = height > 0 ? 1 : -1
-        const spiralDirection = direction > 0 ? 1 : -1
+    const containingBlock = functionBlocks.find((block) => block.addresses.includes(index))
 
-        const x = helixRadius * Math.cos(angle + strand * Math.PI + spiralDirection * 0.1)
-        const y = helixRadius * Math.sin(angle + strand * Math.PI + spiralDirection * 0.1)
-
-        const bases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
-        const base_char = bases[i % bases.length]
-
-        return {
-          index: i,
-          coords: [x, y, height] as [number, number, number],
-          strand,
-          base: base_char,
-          complement: bases[bases.length - 1 - (i % bases.length)],
-          angle,
-          base_pair_id: `${base_char}-${bases[bases.length - 1 - (i % bases.length)]}`,
-          command: process.command,
-          category: process.category,
-          is_fork: process.is_fork,
-          fork_type: process.fork_type as any,
-          spiral_id: "main",
-        }
-      })
-
-      // Generate fork spirals
-      const forks: ForkSpiral[] = [
-        {
-          id: "if-branch",
-          fork_type: "if",
-          parent_node: 1, // A2
-          direction: "right",
-          nodes: [
-            {
-              index: 100,
-              coords: [18, 8, 12],
-              strand: 0,
-              base: "I1",
-              complement: "C1",
-              angle: 0.5,
-              base_pair_id: "I1-C1",
-              command: "check_balance",
-              category: "validation",
-              spiral_id: "if-branch",
-            },
-            {
-              index: 101,
-              coords: [16, 12, 18],
-              strand: 1,
-              base: "I2",
-              complement: "C2",
-              angle: 1.0,
-              base_pair_id: "I2-C2",
-              command: "validate_funds",
-              category: "validation",
-              spiral_id: "if-branch",
-            },
-          ],
-        },
-        {
-          id: "loop-branch",
-          fork_type: "loop",
-          parent_node: 6, // A7
-          direction: "left",
-          nodes: [
-            {
-              index: 200,
-              coords: [-18, -8, 36],
-              strand: 0,
-              base: "L1",
-              complement: "R1",
-              angle: 2.5,
-              base_pair_id: "L1-R1",
-              command: "process_stock",
-              category: "processing",
-              spiral_id: "loop-branch",
-            },
-            {
-              index: 201,
-              coords: [-16, -12, 42],
-              strand: 1,
-              base: "L2",
-              complement: "R2",
-              angle: 3.0,
-              base_pair_id: "L2-R2",
-              command: "analyze_trends",
-              category: "analysis",
-              spiral_id: "loop-branch",
-            },
-          ],
-        },
-      ]
-
-      setSpiralNodes(nodes)
-      setForkSpirals(forks)
-      setMapData(
-        sampleProcesses.map((p, i) => ({
-          ...p,
-          coords: nodes[i].coords,
-          subprocesses: [],
-          direction: null,
-        })),
+    if (node.isDuplicate && node.referenceTo !== undefined) {
+      const originalNode = spiralNodes.find((n) => n.index === node.referenceTo)
+      setCodeDetails(`REFERENCE TO A${node.referenceTo + 1}:\n${originalNode?.command || "No command"}`)
+    } else {
+      const blockInfo = containingBlock ? `\nFunction Block: ${containingBlock.name} (${containingBlock.id})` : ""
+      setCodeDetails(
+        `ADDRESS A${index + 1}:\n${node.command || "No command"}\nCategory: ${node.category}${blockInfo}\nCoordinates: [${node.coords.map((c) => c.toFixed(2)).join(", ")}]`,
       )
-      setIsLoading(false)
     }
 
-    generateSampleData()
-  }, [])
+    console.log(`[v0] Address A${index + 1} clicked - ${node.command}`)
+  }
+
+  const runFromHere = (startIndex: number) => {
+    const containingBlock = functionBlocks.find((block) => block.addresses.includes(startIndex))
+
+    if (containingBlock) {
+      setRunningBlock(containingBlock)
+      setExpandedBlocks((prev) => [...prev, containingBlock.id])
+
+      const blockSequence = containingBlock.addresses
+      setExecutionSequence(blockSequence)
+
+      setTerminalHistory((prev) => [
+        ...prev,
+        `> run from A${startIndex + 1}`,
+        `Executing function block: ${containingBlock.name}`,
+        `Generating data A${containingBlock.startAddress + 1}-A${containingBlock.endAddress + 1}`,
+        `Block contains ${containingBlock.addresses.length} processes`,
+        "",
+      ])
+
+      blockSequence.forEach((addressIndex, i) => {
+        setTimeout(() => {
+          setCurrentExecutingLine(addressIndex)
+          setExecutingProcess(spiralNodes[addressIndex])
+
+          if (i === blockSequence.length - 1) {
+            setTimeout(() => {
+              setRunningBlock(null)
+              setExpandedBlocks((prev) => prev.filter((id) => id !== containingBlock.id))
+              setCurrentExecutingLine(null)
+              setExecutingProcess(null)
+            }, 1000)
+          }
+        }, i * 500)
+      })
+    } else {
+      setExecutingProcess(spiralNodes[startIndex])
+      setCurrentExecutingLine(startIndex)
+
+      setTimeout(() => {
+        setExecutingProcess(null)
+        setCurrentExecutingLine(null)
+      }, 1500)
+    }
+  }
+
+  const processMultipleFiles = async (files: File[]) => {
+    setIsAnalyzing(true)
+    const fileAnalyses: FileAnalysis[] = []
+    const globalCodeMap = new Map<string, string[]>()
+    let totalLines = 0
+    let totalDuplicates = 0
+
+    for (const file of files) {
+      const content = await readFileContent(file)
+      const analysis = analyzeFile(file.name, content, globalCodeMap)
+      fileAnalyses.push(analysis)
+      totalLines += analysis.totalLines
+      totalDuplicates += analysis.duplicateLines
+    }
+
+    const overallEnergySavings = totalDuplicates > 0 ? (totalDuplicates / totalLines) * 100 : 0
+    const optimizationPotential = calculateOptimizationPotential(fileAnalyses)
+
+    const projectAnalysis: ProjectAnalysis = {
+      totalFiles: files.length,
+      totalLines,
+      totalDuplicates,
+      overallEnergySavings,
+      optimizationPotential,
+      fileAnalyses,
+      globalDuplicates: Object.fromEntries(
+        Array.from(globalCodeMap.entries()).filter(([_, locations]) => locations.length > 1),
+      ),
+    }
+
+    setProjectAnalysis(projectAnalysis)
+    setIsAnalyzing(false)
+
+    // Process the first file for visualization
+    if (files.length > 0) {
+      const firstFileContent = await readFileContent(files[0])
+      const processes = parseCodeToProcesses(firstFileContent)
+      const processedNodes = detectCodeDuplicates(processes)
+      const blocks = detectFunctionBlocks(processedNodes)
+
+      setSpiralNodes(processedNodes)
+      setFunctionBlocks(blocks)
+      setInputCode(firstFileContent)
+    }
+  }
+
+  const readFileContent = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve(e.target?.result as string)
+      reader.readAsText(file)
+    })
+  }
+
+  const analyzeFile = (fileName: string, content: string, globalCodeMap: Map<string, string[]>): FileAnalysis => {
+    const lines = content.split("\n").filter((line) => line.trim())
+    const lineMap = new Map<string, number>()
+    const categories: { [key: string]: number } = {}
+
+    lines.forEach((line, index) => {
+      const normalized = line.trim().toLowerCase()
+      if (normalized) {
+        // Track global duplicates across all files
+        if (!globalCodeMap.has(normalized)) {
+          globalCodeMap.set(normalized, [])
+        }
+        globalCodeMap.get(normalized)!.push(`${fileName}:${index + 1}`)
+
+        // Track local duplicates
+        lineMap.set(normalized, (lineMap.get(normalized) || 0) + 1)
+
+        // Categorize lines
+        const category = categorizeCodeLine(line)
+        categories[category] = (categories[category] || 0) + 1
+      }
+    })
+
+    const duplicateLines = Array.from(lineMap.values()).reduce((sum, count) => sum + (count > 1 ? count - 1 : 0), 0)
+    const uniqueLines = lines.length - duplicateLines
+    const energySavings = duplicateLines > 0 ? (duplicateLines / lines.length) * 100 : 0
+    const optimizationPotential = calculateFileOptimization(categories, duplicateLines, lines.length)
+
+    return {
+      fileName,
+      fileType: getFileType(fileName),
+      totalLines: lines.length,
+      duplicateLines,
+      uniqueLines,
+      energySavings,
+      optimizationPotential,
+      functionBlocks: categories["function"] || 0,
+      categories,
+    }
+  }
+
+  const categorizeCodeLine = (line: string): string => {
+    const trimmed = line.trim().toLowerCase()
+    if (trimmed.includes("def ") || trimmed.includes("function ") || trimmed.includes("class ")) return "function"
+    if (trimmed.includes("if ") || trimmed.includes("else") || trimmed.includes("switch")) return "control"
+    if (trimmed.includes("for ") || trimmed.includes("while ") || trimmed.includes("do ")) return "loop"
+    if (trimmed.includes("import ") || trimmed.includes("require(") || trimmed.includes("#include")) return "import"
+    if (trimmed.includes("return ") || trimmed.includes("yield ")) return "return"
+    if (trimmed.includes("try ") || trimmed.includes("catch ") || trimmed.includes("except")) return "error_handling"
+    if (trimmed.includes("console.log") || trimmed.includes("print(") || trimmed.includes("echo")) return "debug"
+    if (trimmed.includes("//") || trimmed.includes("#") || trimmed.includes("/*")) return "comment"
+    return "general"
+  }
+
+  const getFileType = (fileName: string): string => {
+    const extension = fileName.split(".").pop()?.toLowerCase()
+    const typeMap: { [key: string]: string } = {
+      js: "JavaScript",
+      ts: "TypeScript",
+      jsx: "React JSX",
+      tsx: "React TSX",
+      py: "Python",
+      java: "Java",
+      cpp: "C++",
+      c: "C",
+      cs: "C#",
+      php: "PHP",
+      rb: "Ruby",
+      go: "Go",
+      rs: "Rust",
+      swift: "Swift",
+      kt: "Kotlin",
+    }
+    return typeMap[extension || ""] || "Unknown"
+  }
+
+  const calculateFileOptimization = (
+    categories: { [key: string]: number },
+    duplicates: number,
+    total: number,
+  ): number => {
+    const functionWeight = (categories["function"] || 0) * 0.3
+    const controlWeight = (categories["control"] || 0) * 0.2
+    const duplicateWeight = (duplicates / total) * 0.5
+    return Math.min(100, (functionWeight + controlWeight + duplicateWeight) * 100)
+  }
+
+  const calculateOptimizationPotential = (analyses: FileAnalysis[]): number => {
+    const totalPotential = analyses.reduce((sum, analysis) => sum + analysis.optimizationPotential, 0)
+    return analyses.length > 0 ? totalPotential / analyses.length : 0
+  }
+
+  const handleFileUploadMultiple = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    if (files.length > 0) {
+      setLoadedFiles(files)
+      processMultipleFiles(files)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragActive(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) {
+      setLoadedFiles(files)
+      processMultipleFiles(files)
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragActive(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragActive(false)
+  }
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
@@ -492,28 +901,102 @@ export default function CodeMapPage() {
     return colors[category] || "bg-gray-500"
   }
 
-  if (!isMounted || isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading CodeMap System...</p>
-        </div>
-      </div>
-    )
-  }
+  useEffect(() => {
+    setIsMounted(true)
+
+    const generateSampleData = () => {
+      const sampleProcesses = [
+        { address: "A1", command: "calculate_sum", category: "math" },
+        { address: "A2", command: "if market_open", category: "control", is_fork: true, fork_type: "if" },
+        { address: "A3", command: "allocate_pyramid", category: "function" },
+        { address: "A4", command: "calculate_cr", category: "math" },
+        { address: "A5", command: "calculate_sum", category: "math" },
+        { address: "A6", command: "calculate_moving_averages", category: "analysis" },
+        { address: "A7", command: "for each_stock", category: "control", is_fork: true, fork_type: "loop" },
+        { address: "A8", command: "detect_market_sentiment", category: "function" },
+        { address: "A9", command: "execute_trades", category: "function" },
+        { address: "A10", command: "if market_open", category: "control", is_fork: true, fork_type: "if" },
+        { address: "A11", command: "validate_data", category: "function" },
+        { address: "A12", command: "process_results", category: "analysis" },
+        { address: "A13", command: "while running", category: "control", is_fork: true, fork_type: "loop" },
+        { address: "A14", command: "compute_metrics", category: "math" },
+        { address: "A15", command: "store_output", category: "function" },
+      ]
+
+      const nodes: ProcessNode[] = sampleProcesses.map((process, i) => {
+        const totalHeight = 50
+        const heightStep = totalHeight / sampleProcesses.length
+        const yPos = 25 - i * heightStep
+
+        const spiralRadius = 8 + Math.sin(i * 0.3) * 2
+        const spiralTurns = 4
+        const angle = (i / sampleProcesses.length) * spiralTurns * 2 * Math.PI
+
+        let strandOffset = 0
+        if (process.category === "control") strandOffset = Math.PI * 0.5
+        else if (process.category === "math" || process.category === "analysis") strandOffset = Math.PI
+        else if (process.category === "function") strandOffset = Math.PI * 1.5
+
+        const xPos = spiralRadius * Math.cos(angle + strandOffset)
+        const zPos = spiralRadius * Math.sin(angle + strandOffset)
+
+        const bases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
+        const base_char = bases[i % bases.length]
+
+        return {
+          index: i,
+          coords: [xPos, yPos, zPos] as [number, number, number],
+          strand: i % 2,
+          base: base_char,
+          complement: bases[bases.length - 1 - (i % bases.length)],
+          angle: angle + strandOffset,
+          base_pair_id: `${base_char}-${bases[bases.length - 1 - (i % bases.length)]}`,
+          command: process.command,
+          category: process.category,
+          is_fork: process.is_fork,
+          fork_type: process.fork_type as any,
+          spiral_id: "main",
+        }
+      })
+
+      const processedNodes = detectCodeDuplicates(nodes)
+      const blocks = detectFunctionBlocks(processedNodes)
+      const forks = generateForkSpirals(processedNodes)
+
+      setSpiralNodes(processedNodes)
+      setFunctionBlocks(blocks)
+      setForkSpirals(forks)
+      setMapData(
+        sampleProcesses.map((p, i) => ({
+          ...p,
+          coords: processedNodes[i].coords,
+          subprocesses: [],
+          direction: null,
+        })),
+      )
+      setIsLoading(false)
+    }
+
+    generateSampleData()
+  }, [])
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card">
+    <div className="min-h-screen bg-black text-white">
+      <header className="border-b border-gray-700 bg-gray-900">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">CodeMap DNA Spiral</h1>
-              <p className="text-muted-foreground">Base-44 Process Visualization with Fork Tracking</p>
+              <h1 className="text-3xl font-bold text-white">CodeMap DNA Spiral</h1>
+              <p className="text-gray-300">Base-44 Process Visualization with Energy Optimization Analysis</p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowFileLoader(!showFileLoader)}
+                className="bg-purple-600 hover:bg-purple-500 text-white border-purple-500"
+              >
+                📁 Load Files
+              </Button>
               <Button variant={activeView === "3d" ? "default" : "outline"} onClick={() => setActiveView("3d")}>
                 3D Spiral
               </Button>
@@ -525,169 +1008,310 @@ export default function CodeMapPage() {
         </div>
       </header>
 
-      <div className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Visualization Panel */}
-          <div className="lg:col-span-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>{activeView === "3d" ? "3D DNA Spiral with Forks" : "2D Bird's Eye with Forks"}</CardTitle>
-                <CardDescription>
-                  Interactive visualization showing main process spiral and branching fork spirals
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-96 w-full">
-                  {activeView === "3d" ? (
-                    isMounted && (
-                      <Canvas camera={{ position: [40, 25, 40], fov: 60 }}>
-                        <ambientLight intensity={0.6} />
-                        <pointLight position={[10, 10, 10]} />
-                        <DNASpiral
-                          nodes={spiralNodes}
-                          forkSpirals={forkSpirals}
-                          selectedNode={selectedNode}
-                          onNodeClick={setSelectedNode}
-                        />
-                        <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
-                      </Canvas>
-                    )
-                  ) : (
-                    <BirdsEyeView
+      {showFileLoader && (
+        <div className="bg-gray-800 border-b border-gray-700 p-4">
+          <div className="max-w-4xl mx-auto">
+            <h3 className="text-lg font-semibold text-green-400 mb-4">Advanced File Loader & System Analysis</h3>
+
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                dragActive ? "border-green-400 bg-green-900 bg-opacity-20" : "border-gray-600 hover:border-gray-500"
+              }`}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+            >
+              <div className="space-y-4">
+                <div className="text-4xl">📂</div>
+                <div>
+                  <p className="text-lg font-medium text-white">Drop files here or click to browse</p>
+                  <p className="text-sm text-gray-400 mt-2">
+                    Supports: .js, .ts, .jsx, .tsx, .py, .java, .cpp, .c, .cs, .php, .rb, .go, .rs, .swift, .kt
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Load entire codebases to analyze energy consumption and optimization potential
+                  </p>
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept=".js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.cs,.php,.rb,.go,.rs,.swift,.kt,.txt"
+                  onChange={handleFileUploadMultiple}
+                  className="hidden"
+                  id="file-upload-multiple"
+                />
+                <label
+                  htmlFor="file-upload-multiple"
+                  className="inline-block px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg cursor-pointer transition-colors font-medium"
+                >
+                  Select Files
+                </label>
+              </div>
+            </div>
+
+            {isAnalyzing && (
+              <div className="mt-4 p-4 bg-blue-900 bg-opacity-50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                  <span className="text-blue-300">Analyzing codebase for optimization opportunities...</span>
+                </div>
+              </div>
+            )}
+
+            {projectAnalysis && (
+              <div className="mt-6 space-y-4">
+                <div className="bg-gray-900 rounded-lg p-6 border border-gray-600">
+                  <h4 className="text-xl font-bold text-green-400 mb-4">🌍 Global Impact Analysis</h4>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-blue-800 p-4 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-white">{projectAnalysis.totalFiles}</div>
+                      <div className="text-sm text-blue-200">Files Analyzed</div>
+                    </div>
+                    <div className="bg-purple-800 p-4 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-white">{projectAnalysis.totalLines.toLocaleString()}</div>
+                      <div className="text-sm text-purple-200">Total Lines</div>
+                    </div>
+                    <div className="bg-red-800 p-4 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-white">
+                        {projectAnalysis.totalDuplicates.toLocaleString()}
+                      </div>
+                      <div className="text-sm text-red-200">Duplicate Lines</div>
+                    </div>
+                    <div className="bg-green-800 p-4 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-white">
+                        {projectAnalysis.overallEnergySavings.toFixed(1)}%
+                      </div>
+                      <div className="text-sm text-green-200">Energy Savings</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-green-900 to-blue-900 p-4 rounded-lg mb-4">
+                    <h5 className="font-bold text-white mb-2">🔋 Environmental Impact</h5>
+                    <p className="text-sm text-gray-200">
+                      By eliminating {projectAnalysis.totalDuplicates.toLocaleString()} duplicate lines, this
+                      optimization could reduce CPU cycles by approximately{" "}
+                      <span className="font-bold text-green-300">
+                        {(projectAnalysis.overallEnergySavings * 1000).toFixed(0)}
+                      </span>{" "}
+                      million operations, potentially saving{" "}
+                      <span className="font-bold text-blue-300">
+                        {(projectAnalysis.overallEnergySavings * 0.1).toFixed(2)} kWh
+                      </span>{" "}
+                      of energy per execution cycle.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h5 className="font-semibold text-white">📊 File Analysis Breakdown</h5>
+                    {projectAnalysis.fileAnalyses.map((analysis, index) => (
+                      <div key={index} className="bg-gray-800 p-3 rounded border border-gray-600">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="font-mono text-sm text-white">{analysis.fileName}</span>
+                            <span className="ml-2 px-2 py-1 bg-blue-600 text-xs rounded text-white">
+                              {analysis.fileType}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm text-green-300 font-bold">
+                              {analysis.energySavings.toFixed(1)}% savings
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {analysis.duplicateLines}/{analysis.totalLines} duplicates
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-300">
+                          Optimization Potential:{" "}
+                          <span className="text-yellow-300 font-bold">
+                            {analysis.optimizationPotential.toFixed(1)}%
+                          </span>
+                          {analysis.functionBlocks > 0 && (
+                            <span className="ml-4">
+                              Functions: <span className="text-blue-300">{analysis.functionBlocks}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex h-screen bg-black">
+        <div className="w-80 bg-gray-900 border-r border-gray-700 overflow-y-auto">
+          <div className="p-4">
+            <h2 className="text-xl font-bold mb-4 text-green-400">Process Index</h2>
+
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold mb-2 text-blue-400">Function Blocks</h3>
+              {functionBlocks.map((block) => (
+                <div key={block.id} className="mb-4 p-3 bg-gray-800 rounded border border-gray-600">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-mono text-sm text-white">{block.name}</span>
+                    <button
+                      onClick={() => runFromHere(block.startAddress)}
+                      className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors font-medium"
+                      disabled={!!runningBlock}
+                    >
+                      Run Block
+                    </button>
+                  </div>
+
+                  <div className="text-xs text-gray-300 mb-2">
+                    <div className="font-semibold text-blue-300">
+                      {block.id.toUpperCase()} consists of lines: {block.lineComposition.join(" ")}
+                    </div>
+
+                    <div className="mt-1 text-gray-400">
+                      Original: {block.originalLines.join(" ")} ({block.originalLines.length} lines)
+                    </div>
+                    <div className="text-green-300">
+                      Optimized: {block.optimizedLines.join(" ")} ({block.optimizedLines.length} lines)
+                    </div>
+
+                    {Object.keys(block.duplicateReplacements).length > 0 && (
+                      <div className="mt-1 text-yellow-300 text-xs">
+                        Duplicates replaced:{" "}
+                        {Object.entries(block.duplicateReplacements)
+                          .map(([duplicate, original]) => `${duplicate}→${original}`)
+                          .join(", ")}
+                      </div>
+                    )}
+
+                    <div className="text-teal-300 font-medium">
+                      Efficiency: {Math.round((1 - block.optimizedLines.length / block.originalLines.length) * 100)}%
+                      reduction
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-gray-300">
+                    A{block.startAddress + 1} - A{block.endAddress + 1} ({block.addresses.length} processes)
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              {spiralNodes.map((node, index) => {
+                const containingBlock = functionBlocks.find((block) => block.addresses.includes(index))
+                const lineRef = `a${index + 1}`
+                const isOptimizedOut = containingBlock?.duplicateReplacements[lineRef]
+
+                return (
+                  <div
+                    key={index}
+                    className={`p-3 rounded cursor-pointer transition-all border ${
+                      selectedNode?.index === node.index
+                        ? "bg-yellow-600 border-yellow-400 text-black"
+                        : currentExecutingLine === index
+                          ? "bg-green-600 border-green-400 animate-pulse text-white"
+                          : isOptimizedOut
+                            ? "bg-orange-900 border-orange-600 hover:bg-orange-800 text-white"
+                            : node.isDuplicate
+                              ? "bg-red-900 border-red-600 hover:bg-red-800 text-white"
+                              : node.duplicateCount > 1
+                                ? "bg-teal-900 border-teal-600 hover:bg-teal-800 text-white"
+                                : "bg-gray-800 border-gray-600 hover:bg-gray-700 text-white"
+                    }`}
+                    onClick={() => handleAddressClick(node, index)}
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono text-sm font-bold">
+                          A{index + 1} ({lineRef})
+                        </span>
+                        <span
+                          className={`px-2 py-1 rounded text-xs text-white font-medium ${getCategoryColor(node.category || "general")}`}
+                        >
+                          {node.category}
+                        </span>
+                        {node.duplicateCount > 1 && (
+                          <span className="text-xs text-teal-200 font-bold">×{node.duplicateCount}</span>
+                        )}
+                        {node.isDuplicate && (
+                          <span className="text-xs text-red-200 font-bold">→A{(node.referenceTo || 0) + 1}</span>
+                        )}
+                        {isOptimizedOut && <span className="text-xs text-orange-200 font-bold">→{isOptimizedOut}</span>}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          runFromHere(index)
+                        }}
+                        className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors font-medium"
+                        disabled={!!runningBlock}
+                      >
+                        Run From Here
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-200 mt-1 truncate font-mono">{node.command}</div>
+
+                    {containingBlock && (
+                      <div className="text-xs text-blue-200 mt-1">
+                        In {containingBlock.id.toUpperCase()}: {containingBlock.lineComposition.join(" ")}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col bg-black">
+          <div className="p-4 border-b border-gray-700 bg-gray-900">
+            <h2 className="text-xl font-bold text-green-400">DNA Visualizer</h2>
+            <p className="text-gray-300">Explore the code structure in 3D or 2D</p>
+          </div>
+
+          <div className="flex-1 p-4 bg-black">
+            {activeView === "3d"
+              ? isMounted && (
+                  <Canvas camera={{ position: [40, 25, 40], fov: 60 }}>
+                    <ambientLight intensity={0.6} />
+                    <pointLight position={[10, 10, 10]} />
+                    <DNASpiral
                       nodes={spiralNodes}
                       forkSpirals={forkSpirals}
                       selectedNode={selectedNode}
                       onNodeClick={setSelectedNode}
+                      onAddressClick={handleAddressClick}
                     />
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Control Panel */}
-          <div className="space-y-6">
-            {/* Process Legend */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Process Legend</CardTitle>
-                <CardDescription>Main spiral and fork locations</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-64">
-                  <div className="space-y-2">
-                    <div className="text-sm font-semibold text-muted-foreground mb-2">Main Spiral:</div>
-                    {mapData.map((process, index) => (
-                      <div
-                        key={process.address}
-                        className={`p-2 rounded cursor-pointer transition-colors ${
-                          selectedNode?.index === index ? "bg-primary/20" : "hover:bg-muted"
-                        }`}
-                        onClick={() => setSelectedNode(spiralNodes[index])}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-sm">{process.address}</span>
-                          <Badge className={getCategoryColor(process.category || "default")}>{process.category}</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">{process.command}</p>
-                        {spiralNodes[index]?.is_fork && (
-                          <p className="text-xs text-orange-400">Fork: {spiralNodes[index]?.fork_type}</p>
-                        )}
-                      </div>
-                    ))}
-
-                    <div className="text-sm font-semibold text-muted-foreground mt-4 mb-2">Fork Spirals:</div>
-                    {forkSpirals.map((spiral) =>
-                      spiral.nodes.map((node, nodeIndex) => (
-                        <div
-                          key={`fork-${spiral.id}-${nodeIndex}`}
-                          className={`p-2 rounded cursor-pointer transition-colors border-l-2 ml-2 ${
-                            selectedNode?.index === node.index ? "bg-primary/20" : "hover:bg-muted"
-                          }`}
-                          style={{
-                            borderLeftColor:
-                              spiral.fork_type === "if"
-                                ? "#10b981"
-                                : spiral.fork_type === "loop"
-                                  ? "#8b5cf6"
-                                  : "#6b7280",
-                          }}
-                          onClick={() => setSelectedNode(node)}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-sm">
-                              {spiral.id}-{nodeIndex + 1}
-                            </span>
-                            <Badge
-                              style={{
-                                backgroundColor:
-                                  spiral.fork_type === "if"
-                                    ? "#10b981"
-                                    : spiral.fork_type === "loop"
-                                      ? "#8b5cf6"
-                                      : "#6b7280",
-                              }}
-                            >
-                              {spiral.fork_type}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">{node.command}</p>
-                          <p className="text-xs text-muted-foreground">Direction: {spiral.direction}</p>
-                        </div>
-                      )),
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-
-            {/* Selected Process Details */}
-            {selectedNode && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Process Details</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-sm font-medium">Address</label>
-                      <p className="font-mono">
-                        {selectedNode.spiral_id === "main"
-                          ? mapData[selectedNode.index]?.address
-                          : `${selectedNode.spiral_id}-${selectedNode.index}`}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">Command</label>
-                      <p className="text-sm">{selectedNode.command}</p>
-                    </div>
-                    {selectedNode.is_fork && (
-                      <div>
-                        <label className="text-sm font-medium">Fork Type</label>
-                        <p className="text-sm capitalize">{selectedNode.fork_type}</p>
-                      </div>
-                    )}
-                    <div>
-                      <label className="text-sm font-medium">Spiral</label>
-                      <p className="text-sm">
-                        {selectedNode.spiral_id === "main" ? "Main Process" : `Fork: ${selectedNode.spiral_id}`}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">3D Coordinates</label>
-                      <p className="font-mono text-sm">[{selectedNode.coords.map((c) => c.toFixed(2)).join(", ")}]</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">DNA Base Pair</label>
-                      <p className="font-mono">{selectedNode.base_pair_id}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                    <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
+                  </Canvas>
+                )
+              : null}
           </div>
         </div>
+
+        <div className="w-1/3 bg-gray-800 border-l border-gray-700">
+          <div className="p-4 border-b border-gray-700 bg-gray-900">
+            <h3 className="text-lg font-semibold text-blue-400">2D Cyclone View</h3>
+            {runningBlock && (
+              <div className="text-sm text-green-300 mt-1 font-medium">Executing: {runningBlock.name}</div>
+            )}
+          </div>
+          <BirdsEyeView
+            nodes={spiralNodes}
+            selectedNode={selectedNode}
+            executingProcess={executingProcess}
+            functionBlocks={functionBlocks}
+            expandedBlocks={expandedBlocks}
+          />
+        </div>
       </div>
+
+      <footer className="border-t border-gray-700 bg-gray-900">
+        <div className="container mx-auto px-4 py-4">
+          <p className="text-center text-gray-300">CodeMap DNA Spiral - Base-44 Process Visualization</p>
+        </div>
+      </footer>
     </div>
   )
 }
