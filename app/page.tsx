@@ -64,12 +64,12 @@ interface FunctionBlock {
   startAddress: number
   endAddress: number
   addresses: number[]
-  category: string
-  description: string
   lineComposition: string[]
   originalLines: string[]
   optimizedLines: string[]
   duplicateReplacements: { [key: string]: string }
+  category: string
+  description: string
 }
 
 interface FileAnalysis {
@@ -92,6 +92,22 @@ interface ProjectAnalysis {
   optimizationPotential: number
   fileAnalyses: FileAnalysis[]
   globalDuplicates: { [key: string]: string[] }
+}
+
+interface AddressRegistry {
+  [key: string]: {
+    node: ProcessNode
+    index: number
+    dependencies: string[]
+    executionFunction: () => Promise<any>
+  }
+}
+
+interface PipelineCall {
+  fromAddress: string
+  toAddress: string
+  timestamp: number
+  status: "pending" | "executing" | "completed" | "failed"
 }
 
 function detectFunctionBlocks(processes: ProcessNode[]): FunctionBlock[] {
@@ -585,321 +601,635 @@ function generateForkSpirals(nodes: ProcessNode[]): ForkSpiral[] {
   return []
 }
 
-function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+const handleZipFile = async (
+  file: File,
+  setIsAnalyzing: any,
+  setProjectAnalysis: any,
+  setSpiralNodes: any,
+  setFunctionBlocks: any,
+  setInputCode: any,
+  setLoadedFiles: any,
+  setDragActive: any,
+  setIsMounted: any,
+  setForkSpirals: any,
+  setMapData: any,
+  setIsLoading: any,
+  setShowFileLoader: any,
+  setActiveView: any,
+  setSelectedNode: any,
+  setRunningBlock: any,
+  setExpandedBlocks: any,
+) => {
+  setIsAnalyzing(true)
+
+  try {
+    // Import JSZip dynamically to avoid bundle bloat
+    const JSZip = (await import("jszip")).default
+    const zip = new JSZip()
+    const zipContent = await zip.loadAsync(file)
+
+    const files: File[] = []
+    const batchSize = 10 // Process files in batches to avoid overwhelming the system
+
+    // Extract files from zip
+    for (const [filename, zipEntry] of Object.entries(zipContent.files)) {
+      if (!zipEntry.dir && isCodeFile(filename)) {
+        const content = await zipEntry.async("text")
+        const blob = new Blob([content], { type: "text/plain" })
+        const extractedFile = new File([blob], filename, { type: "text/plain" })
+        files.push(extractedFile)
+      }
+    }
+
+    console.log(`[v0] Extracted ${files.length} code files from zip`)
+
+    // Process files in batches to reduce operations
+    const batches = []
+    for (let i = 0; i < files.length; i += batchSize) {
+      batches.push(files.slice(i, i + batchSize))
+    }
+
+    console.log(`[v0] Processing ${batches.length} batches of files`)
+
+    // Process batches sequentially to avoid overwhelming the system
+    for (let i = 0; i < batches.length; i++) {
+      console.log(`[v0] Processing batch ${i + 1}/${batches.length}`)
+      await processMultipleFiles(
+        batches[i],
+        setIsAnalyzing,
+        setProjectAnalysis,
+        setSpiralNodes,
+        setFunctionBlocks,
+        setInputCode,
+        setLoadedFiles,
+        setDragActive,
+        setIsMounted,
+        setForkSpirals,
+        setMapData,
+        setIsLoading,
+        setShowFileLoader,
+        setActiveView,
+        setSelectedNode,
+        setRunningBlock,
+        setExpandedBlocks,
+      )
+
+      // Add small delay between batches to prevent UI freezing
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+  } catch (error) {
+    console.error("[v0] Error processing zip file:", error)
+  } finally {
+    setIsAnalyzing(false)
+  }
+}
+
+const isCodeFile = (filename: string): boolean => {
+  const codeExtensions = [
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".py",
+    ".java",
+    ".cpp",
+    ".c",
+    ".cs",
+    ".php",
+    ".rb",
+    ".go",
+    ".rs",
+    ".swift",
+    ".kt",
+  ]
+  return codeExtensions.some((ext) => filename.toLowerCase().endsWith(ext))
+}
+
+function handleFileUpload(
+  event: React.ChangeEvent<HTMLInputElement>,
+  setIsAnalyzing: any,
+  setProjectAnalysis: any,
+  setSpiralNodes: any,
+  setFunctionBlocks: any,
+  setInputCode: any,
+  setLoadedFiles: any,
+  setDragActive: any,
+  setIsMounted: any,
+  setForkSpirals: any,
+  setMapData: any,
+  setIsLoading: any,
+  setShowFileLoader: any,
+  setActiveView: any,
+  setSelectedNode: any,
+  setRunningBlock: any,
+  setExpandedBlocks: any,
+) {
   const file = event.target.files?.[0]
   if (file) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const code = e.target?.result as string
       console.log(code)
+      processMultipleFiles(
+        [file],
+        setIsAnalyzing,
+        setProjectAnalysis,
+        setSpiralNodes,
+        setFunctionBlocks,
+        setInputCode,
+        setLoadedFiles,
+        setDragActive,
+        setIsMounted,
+        setForkSpirals,
+        setMapData,
+        setIsLoading,
+        setShowFileLoader,
+        setActiveView,
+        setSelectedNode,
+        setRunningBlock,
+        setExpandedBlocks,
+      )
     }
     reader.readAsText(file)
   }
 }
 
-export default function CodeMapDNASpiral() {
-  const [mapData, setMapData] = useState<MapData[]>([])
-  const [spiralNodes, setSpiralNodes] = useState<ProcessNode[]>([])
-  const [forkSpirals, setForkSpirals] = useState<ForkSpiral[]>([])
-  const [selectedNode, setSelectedNode] = useState<ProcessNode | null>(null)
-  const [activeView, setActiveView] = useState<"3d" | "2d">("3d")
-  const [isLoading, setIsLoading] = useState(true)
-  const [isMounted, setIsMounted] = useState(false)
-  const [inputCode, setInputCode] = useState("")
-  const [activeTab, setActiveTab] = useState<"visualizer" | "input">("input")
-  const [terminalInput, setTerminalInput] = useState("")
-  const [terminalHistory, setTerminalHistory] = useState<string[]>([
-    "CodeMap Terminal v1.0 - Base-44 Process Addressing System",
-    "Type 'help' for available commands",
-    "Use addresses like A1, A2, IF-BRANCH-1, LOOP-BRANCH-2 to call processes",
-    "",
-  ])
-  const [executingProcess, setExecutingProcess] = useState<ProcessNode | null>(null)
-  const [executionLog, setExecutionLog] = useState<string[]>([])
-  const [currentExecutingLine, setCurrentExecutingLine] = useState<number | null>(null)
-  const [selectedAddress, setSelectedAddress] = useState<{ node: ProcessNode; index: number } | null>(null)
-  const [executionSequence, setExecutionSequence] = useState<number[]>([])
-  const [codeDetails, setCodeDetails] = useState<string>("")
+const processMultipleFiles = async (
+  files: File[],
+  setIsAnalyzing: any,
+  setProjectAnalysis: any,
+  setSpiralNodes: any,
+  setFunctionBlocks: any,
+  setInputCode: any,
+  setLoadedFiles: any,
+  setDragActive: any,
+  setIsMounted: any,
+  setForkSpirals: any,
+  setMapData: any,
+  setIsLoading: any,
+  setShowFileLoader: any,
+  setActiveView: any,
+  setSelectedNode: any,
+  setRunningBlock: any,
+  setExpandedBlocks: any,
+) => {
+  if (files.length === 0) return
 
-  const [functionBlocks, setFunctionBlocks] = useState<FunctionBlock[]>([])
-  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([])
-  const [runningBlock, setRunningBlock] = useState<FunctionBlock | null>(null)
+  setIsAnalyzing(true)
+  const fileAnalyses: FileAnalysis[] = []
+  const globalCodeMap = new Map<string, string[]>()
+  let totalLines = 0
+  let totalDuplicates = 0
 
-  const [loadedFiles, setLoadedFiles] = useState<File[]>([])
-  const [projectAnalysis, setProjectAnalysis] = useState<ProjectAnalysis | null>(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [showFileLoader, setShowFileLoader] = useState(false)
-  const [dragActive, setDragActive] = useState(false)
+  // Batch read all files first
+  const fileContents = await Promise.all(
+    files.map(async (file) => ({
+      file,
+      content: await readFileContent(file),
+    })),
+  )
 
-  const getForkColor = (forkType?: string) => {
-    switch (forkType) {
-      case "if":
-        return "#ff1493"
-      case "else":
-        return "#00ff00"
-      case "loop":
-        return "#0000ff"
-      case "function_call":
-        return "#ff0000"
-      case "merge":
-        return "#000000"
-      default:
-        return "#6b7280"
-    }
+  // Then analyze all at once instead of one by one
+  fileContents.forEach(({ file, content }) => {
+    const analysis = analyzeFile(file.name, content, globalCodeMap)
+    fileAnalyses.push(analysis)
+    totalLines += analysis.totalLines
+    totalDuplicates += analysis.duplicateLines
+  })
+
+  const overallEnergySavings = totalDuplicates > 0 ? (totalDuplicates / totalLines) * 100 : 0
+  const optimizationPotential = calculateOptimizationPotential(fileAnalyses)
+
+  const projectAnalysis: ProjectAnalysis = {
+    totalFiles: files.length,
+    totalLines,
+    totalDuplicates,
+    overallEnergySavings,
+    optimizationPotential,
+    fileAnalyses,
+    globalDuplicates: Object.fromEntries(
+      Array.from(globalCodeMap.entries()).filter(([_, locations]) => locations.length > 1),
+    ),
   }
+
+  setProjectAnalysis(projectAnalysis)
+  setIsAnalyzing(false)
+
+  // Process the first file for visualization
+  if (files.length > 0) {
+    const firstFileContent = await readFileContent(files[0])
+    const processes = parseCodeToProcesses(firstFileContent)
+    const processedNodes = detectCodeDuplicates(processes)
+    const blocks = detectFunctionBlocks(processedNodes)
+
+    setSpiralNodes(processedNodes)
+    setFunctionBlocks(blocks)
+    setInputCode(firstFileContent)
+  }
+}
+
+const readFileContent = (file: File): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => resolve(e.target?.result as string)
+    reader.readAsText(file)
+  })
+}
+
+const analyzeFile = (fileName: string, content: string, globalCodeMap: Map<string, string[]>): FileAnalysis => {
+  const lines = content.split("\n").filter((line) => line.trim())
+  const lineMap = new Map<string, number>()
+  const categories: { [key: string]: number } = {}
+
+  lines.forEach((line, index) => {
+    const normalized = line.trim().toLowerCase()
+    if (normalized) {
+      // Track global duplicates across all files
+      if (!globalCodeMap.has(normalized)) {
+        globalCodeMap.set(normalized, [])
+      }
+      globalCodeMap.get(normalized)!.push(`${fileName}:${index + 1}`)
+
+      // Track local duplicates
+      lineMap.set(normalized, (lineMap.get(normalized) || 0) + 1)
+
+      // Categorize lines
+      const category = categorizeCodeLine(line)
+      categories[category] = (categories[category] || 0) + 1
+    }
+  })
+
+  const duplicateLines = Array.from(lineMap.values()).reduce((sum, count) => sum + (count > 1 ? count - 1 : 0), 0)
+  const uniqueLines = lines.length - duplicateLines
+  const energySavings = duplicateLines > 0 ? (duplicateLines / lines.length) * 100 : 0
+  const optimizationPotential = calculateFileOptimization(categories, duplicateLines, lines.length)
+
+  return {
+    fileName,
+    fileType: getFileType(fileName),
+    totalLines: lines.length,
+    duplicateLines,
+    uniqueLines,
+    energySavings,
+    optimizationPotential,
+    functionBlocks: categories["function"] || 0,
+    categories,
+  }
+}
+
+const categorizeCodeLine = (line: string): string => {
+  const trimmed = line.trim().toLowerCase()
+  if (trimmed.includes("def ") || trimmed.includes("function ") || trimmed.includes("class ")) return "function"
+  if (trimmed.includes("if ") || trimmed.includes("else") || trimmed.includes("switch")) return "control"
+  if (trimmed.includes("for ") || trimmed.includes("while ") || trimmed.includes("do ")) return "loop"
+  if (trimmed.includes("import ") || trimmed.includes("require(") || trimmed.includes("#include")) return "import"
+  if (trimmed.includes("return ") || trimmed.includes("yield ")) return "return"
+  if (trimmed.includes("try ") || trimmed.includes("catch ") || trimmed.includes("except")) return "error_handling"
+  if (trimmed.includes("console.log") || trimmed.includes("print(") || trimmed.includes("echo")) return "debug"
+  if (trimmed.includes("//") || trimmed.includes("#") || trimmed.includes("/*")) return "comment"
+  return "general"
+}
+
+const getFileType = (fileName: string): string => {
+  const extension = fileName.split(".").pop()?.toLowerCase()
+  const typeMap: { [key: string]: string } = {
+    js: "JavaScript",
+    ts: "TypeScript",
+    jsx: "React JSX",
+    tsx: "React TSX",
+    py: "Python",
+    java: "Java",
+    cpp: "C++",
+    c: "C",
+    cs: "C#",
+    php: "PHP",
+    rb: "Ruby",
+    go: "Go",
+    rs: "Rust",
+    swift: "Swift",
+    kt: "Kotlin",
+  }
+  return typeMap[extension || ""] || "Unknown"
+}
+
+const calculateFileOptimization = (
+  categories: { [key: string]: number },
+  duplicates: number,
+  total: number,
+): number => {
+  const functionWeight = (categories["function"] || 0) * 0.3
+  const controlWeight = (categories["control"] || 0) * 0.2
+  const duplicateWeight = (duplicates / total) * 0.5
+  return Math.min(100, (functionWeight + controlWeight + duplicateWeight) * 100)
+}
+
+const calculateOptimizationPotential = (analyses: FileAnalysis[]): number => {
+  const totalPotential = analyses.reduce((sum, analysis) => sum + analysis.optimizationPotential, 0)
+  return analyses.length > 0 ? totalPotential / analyses.length : 0
+}
+
+const handleFileUploadMultiple = async (
+  event: React.ChangeEvent<HTMLInputElement>,
+  setIsAnalyzing: any,
+  setProjectAnalysis: any,
+  setSpiralNodes: any,
+  setFunctionBlocks: any,
+  setInputCode: any,
+  setLoadedFiles: any,
+  setDragActive: any,
+  setIsMounted: any,
+  setForkSpirals: any,
+  setMapData: any,
+  setIsLoading: any,
+  setShowFileLoader: any,
+  setActiveView: any,
+  setSelectedNode: any,
+  setRunningBlock: any,
+  setExpandedBlocks: any,
+) => {
+  const files = Array.from(event.target.files || [])
+  if (files.length === 0) return
+
+  const firstFile = files[0]
+
+  // Check if it's a zip file
+  if (firstFile.name.toLowerCase().endsWith(".zip")) {
+    console.log("[v0] Detected zip file, processing...")
+    await handleZipFile(
+      firstFile,
+      setIsAnalyzing,
+      setProjectAnalysis,
+      setSpiralNodes,
+      setFunctionBlocks,
+      setInputCode,
+      setLoadedFiles,
+      setDragActive,
+      setIsMounted,
+      setForkSpirals,
+      setMapData,
+      setIsLoading,
+      setShowFileLoader,
+      setActiveView,
+      setSelectedNode,
+      setRunningBlock,
+      setExpandedBlocks,
+    )
+  } else {
+    console.log(`[v0] Processing ${files.length} individual files`)
+    setLoadedFiles(files)
+    await processMultipleFiles(
+      files,
+      setIsAnalyzing,
+      setProjectAnalysis,
+      setSpiralNodes,
+      setFunctionBlocks,
+      setInputCode,
+      setLoadedFiles,
+      setDragActive,
+      setIsMounted,
+      setForkSpirals,
+      setMapData,
+      setIsLoading,
+      setShowFileLoader,
+      setActiveView,
+      setSelectedNode,
+      setRunningBlock,
+      setExpandedBlocks,
+    )
+  }
+}
+
+const handleDrop = async (
+  e: React.DragEvent,
+  setIsAnalyzing: any,
+  setProjectAnalysis: any,
+  setSpiralNodes: any,
+  setFunctionBlocks: any,
+  setInputCode: any,
+  setLoadedFiles: any,
+  setDragActive: any,
+  setIsMounted: any,
+  setForkSpirals: any,
+  setMapData: any,
+  setIsLoading: any,
+  setShowFileLoader: any,
+  setActiveView: any,
+  setSelectedNode: any,
+  setRunningBlock: any,
+  setExpandedBlocks: any,
+) => {
+  e.preventDefault()
+  setDragActive(false)
+  const files = Array.from(e.dataTransfer.files)
+  if (files.length === 0) return
+
+  const firstFile = files[0]
+
+  if (firstFile.name.toLowerCase().endsWith(".zip")) {
+    console.log("[v0] Detected zip file via drag and drop, processing...")
+    await handleZipFile(
+      firstFile,
+      setIsAnalyzing,
+      setProjectAnalysis,
+      setSpiralNodes,
+      setFunctionBlocks,
+      setInputCode,
+      setLoadedFiles,
+      setDragActive,
+      setIsMounted,
+      setForkSpirals,
+      setMapData,
+      setIsLoading,
+      setShowFileLoader,
+      setActiveView,
+      setSelectedNode,
+      setRunningBlock,
+      setExpandedBlocks,
+    )
+  } else {
+    console.log(`[v0] Processing ${files.length} dragged files`)
+    setLoadedFiles(files)
+    await processMultipleFiles(
+      files,
+      setIsAnalyzing,
+      setProjectAnalysis,
+      setSpiralNodes,
+      setFunctionBlocks,
+      setInputCode,
+      setLoadedFiles,
+      setDragActive,
+      setIsMounted,
+      setForkSpirals,
+      setMapData,
+      setIsLoading,
+      setShowFileLoader,
+      setActiveView,
+      setSelectedNode,
+      setRunningBlock,
+      setExpandedBlocks,
+    )
+  }
+}
+
+const handleDragOver = (e: React.DragEvent, setDragActive: any) => {
+  e.preventDefault()
+  setDragActive(true)
+}
+
+const handleDragLeave = (e: React.DragEvent, setDragActive: any) => {
+  e.preventDefault()
+  setDragActive(false)
+}
+
+const getCategoryColor = (category: string) => {
+  const colors: Record<string, string> = {
+    math: "bg-blue-500",
+    crypto: "bg-purple-500",
+    analysis: "bg-green-500",
+    ai: "bg-orange-500",
+    execution: "bg-red-500",
+    data: "bg-cyan-500",
+    control: "bg-yellow-500",
+    validation: "bg-emerald-500",
+    processing: "bg-violet-500",
+  }
+  return colors[category] || "bg-gray-500"
+}
+
+const Page = () => {
+  const [isMounted, setIsMounted] = useState(false)
+  const [showFileLoader, setShowFileLoader] = useState(false)
+  const [activeView, setActiveView] = useState("3d")
+  const [dragActive, setDragActive] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [projectAnalysis, setProjectAnalysis] = useState<ProjectAnalysis | null>(null)
+  const [loadedFiles, setLoadedFiles] = useState<File[]>([])
+  const [spiralNodes, setSpiralNodes] = useState<ProcessNode[]>([])
+  const [functionBlocks, setFunctionBlocks] = useState<FunctionBlock[]>([])
+  const [forkSpirals, setForkSpirals] = useState<ForkSpiral[]>([])
+  const [mapData, setMapData] = useState<MapData[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedNode, setSelectedNode] = useState<ProcessNode | null>(null)
+  const [currentExecutingLine, setCurrentExecutingLine] = useState<number | null>(null)
+  const [runningBlock, setRunningBlock] = useState<FunctionBlock | null>(null)
+  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([])
+  const [inputCode, setInputCode] = useState("")
+
+  const [addressRegistry, setAddressRegistry] = useState<AddressRegistry>({})
+  const [pipelineCalls, setPipelineCalls] = useState<PipelineCall[]>([])
+  const [activeSummons, setActiveSummons] = useState<string[]>([])
 
   const handleAddressClick = (node: ProcessNode, index: number) => {
-    setSelectedAddress({ node, index })
     setSelectedNode(node)
-
-    const containingBlock = functionBlocks.find((block) => block.addresses.includes(index))
-
-    if (node.isDuplicate && node.referenceTo !== undefined) {
-      const originalNode = spiralNodes.find((n) => n.index === node.referenceTo)
-      setCodeDetails(`REFERENCE TO A${node.referenceTo + 1}:\n${originalNode?.command || "No command"}`)
-    } else {
-      const blockInfo = containingBlock ? `\nFunction Block: ${containingBlock.name} (${containingBlock.id})` : ""
-      setCodeDetails(
-        `ADDRESS A${index + 1}:\n${node.command || "No command"}\nCategory: ${node.category}${blockInfo}\nCoordinates: [${node.coords.map((c) => c.toFixed(2)).join(", ")}]`,
-      )
-    }
-
-    console.log(`[v0] Address A${index + 1} clicked - ${node.command}`)
+    setCurrentExecutingLine(index)
   }
 
-  const runFromHere = (startIndex: number) => {
-    const containingBlock = functionBlocks.find((block) => block.addresses.includes(startIndex))
+  const summonAddress = async (addressId: string, callingAddress?: string) => {
+    const registryEntry = addressRegistry[addressId]
+    if (!registryEntry) {
+      console.log(`[v0] Address ${addressId} not found in registry`)
+      return null
+    }
 
-    if (containingBlock) {
-      setRunningBlock(containingBlock)
-      setExpandedBlocks((prev) => [...prev, containingBlock.id])
+    // Create pipeline call record
+    const call: PipelineCall = {
+      fromAddress: callingAddress || "pipeline",
+      toAddress: addressId,
+      timestamp: Date.now(),
+      status: "pending",
+    }
 
-      const blockSequence = containingBlock.addresses
-      setExecutionSequence(blockSequence)
+    setPipelineCalls((prev) => [...prev, call])
+    setActiveSummons((prev) => [...prev, addressId])
 
-      setTerminalHistory((prev) => [
-        ...prev,
-        `> run from A${startIndex + 1}`,
-        `Executing function block: ${containingBlock.name}`,
-        `Generating data A${containingBlock.startAddress + 1}-A${containingBlock.endAddress + 1}`,
-        `Block contains ${containingBlock.addresses.length} processes`,
-        "",
-      ])
+    try {
+      // Update call status
+      setPipelineCalls((prev) => prev.map((c) => (c.timestamp === call.timestamp ? { ...c, status: "executing" } : c)))
 
-      blockSequence.forEach((addressIndex, i) => {
-        setTimeout(() => {
-          setCurrentExecutingLine(addressIndex)
-          setExecutingProcess(spiralNodes[addressIndex])
+      // Execute the summoned address
+      const result = await registryEntry.executionFunction()
 
-          if (i === blockSequence.length - 1) {
-            setTimeout(() => {
-              setRunningBlock(null)
-              setExpandedBlocks((prev) => prev.filter((id) => id !== containingBlock.id))
-              setCurrentExecutingLine(null)
-              setExecutingProcess(null)
-            }, 1000)
-          }
-        }, i * 500)
-      })
-    } else {
-      setExecutingProcess(spiralNodes[startIndex])
-      setCurrentExecutingLine(startIndex)
+      // Mark as completed
+      setPipelineCalls((prev) => prev.map((c) => (c.timestamp === call.timestamp ? { ...c, status: "completed" } : c)))
 
-      setTimeout(() => {
-        setExecutingProcess(null)
-        setCurrentExecutingLine(null)
-      }, 1500)
+      return result
+    } catch (error) {
+      // Mark as failed
+      setPipelineCalls((prev) => prev.map((c) => (c.timestamp === call.timestamp ? { ...c, status: "failed" } : c)))
+      console.error(`[v0] Failed to execute ${addressId}:`, error)
+      return null
+    } finally {
+      setActiveSummons((prev) => prev.filter((addr) => addr !== addressId))
     }
   }
 
-  const processMultipleFiles = async (files: File[]) => {
-    setIsAnalyzing(true)
-    const fileAnalyses: FileAnalysis[] = []
-    const globalCodeMap = new Map<string, string[]>()
-    let totalLines = 0
-    let totalDuplicates = 0
+  const buildAddressRegistry = (processes: ProcessNode[]) => {
+    const registry: AddressRegistry = {}
 
-    for (const file of files) {
-      const content = await readFileContent(file)
-      const analysis = analyzeFile(file.name, content, globalCodeMap)
-      fileAnalyses.push(analysis)
-      totalLines += analysis.totalLines
-      totalDuplicates += analysis.duplicateLines
-    }
+    processes.forEach((node, index) => {
+      const addressId = `a${index + 1}`
 
-    const overallEnergySavings = totalDuplicates > 0 ? (totalDuplicates / totalLines) * 100 : 0
-    const optimizationPotential = calculateOptimizationPotential(fileAnalyses)
-
-    const projectAnalysis: ProjectAnalysis = {
-      totalFiles: files.length,
-      totalLines,
-      totalDuplicates,
-      overallEnergySavings,
-      optimizationPotential,
-      fileAnalyses,
-      globalDuplicates: Object.fromEntries(
-        Array.from(globalCodeMap.entries()).filter(([_, locations]) => locations.length > 1),
-      ),
-    }
-
-    setProjectAnalysis(projectAnalysis)
-    setIsAnalyzing(false)
-
-    // Process the first file for visualization
-    if (files.length > 0) {
-      const firstFileContent = await readFileContent(files[0])
-      const processes = parseCodeToProcesses(firstFileContent)
-      const processedNodes = detectCodeDuplicates(processes)
-      const blocks = detectFunctionBlocks(processedNodes)
-
-      setSpiralNodes(processedNodes)
-      setFunctionBlocks(blocks)
-      setInputCode(firstFileContent)
-    }
-  }
-
-  const readFileContent = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve(e.target?.result as string)
-      reader.readAsText(file)
-    })
-  }
-
-  const analyzeFile = (fileName: string, content: string, globalCodeMap: Map<string, string[]>): FileAnalysis => {
-    const lines = content.split("\n").filter((line) => line.trim())
-    const lineMap = new Map<string, number>()
-    const categories: { [key: string]: number } = {}
-
-    lines.forEach((line, index) => {
-      const normalized = line.trim().toLowerCase()
-      if (normalized) {
-        // Track global duplicates across all files
-        if (!globalCodeMap.has(normalized)) {
-          globalCodeMap.set(normalized, [])
+      // Determine dependencies by analyzing the command
+      const dependencies: string[] = []
+      if (node.command) {
+        // Look for address references in the command (like calling other functions)
+        const addressMatches = node.command.match(/a\d+/g)
+        if (addressMatches) {
+          dependencies.push(...addressMatches.filter((addr) => addr !== addressId))
         }
-        globalCodeMap.get(normalized)!.push(`${fileName}:${index + 1}`)
+      }
 
-        // Track local duplicates
-        lineMap.set(normalized, (lineMap.get(normalized) || 0) + 1)
+      // Create execution function for this address
+      const executionFunction = async () => {
+        console.log(`[v0] Executing ${addressId}: ${node.command}`)
+        setCurrentExecutingLine(index)
 
-        // Categorize lines
-        const category = categorizeCodeLine(line)
-        categories[category] = (categories[category] || 0) + 1
+        // Simulate execution time based on command complexity
+        const executionTime = node.command?.length ? Math.min(node.command.length * 10, 2000) : 500
+        await new Promise((resolve) => setTimeout(resolve, executionTime))
+
+        setCurrentExecutingLine(null)
+        return { addressId, result: `Executed: ${node.command}`, timestamp: Date.now() }
+      }
+
+      registry[addressId] = {
+        node,
+        index,
+        dependencies,
+        executionFunction,
       }
     })
 
-    const duplicateLines = Array.from(lineMap.values()).reduce((sum, count) => sum + (count > 1 ? count - 1 : 0), 0)
-    const uniqueLines = lines.length - duplicateLines
-    const energySavings = duplicateLines > 0 ? (duplicateLines / lines.length) * 100 : 0
-    const optimizationPotential = calculateFileOptimization(categories, duplicateLines, lines.length)
+    setAddressRegistry(registry)
+    return registry
+  }
 
-    return {
-      fileName,
-      fileType: getFileType(fileName),
-      totalLines: lines.length,
-      duplicateLines,
-      uniqueLines,
-      energySavings,
-      optimizationPotential,
-      functionBlocks: categories["function"] || 0,
-      categories,
+  const runFromHere = async (startIndex: number) => {
+    const addressId = `a${startIndex + 1}`
+    const blockToRun = functionBlocks.find((block) => block.startAddress === startIndex)
+
+    if (blockToRun) {
+      setRunningBlock(blockToRun)
+
+      // Summon all addresses in the block sequentially
+      for (const addr of blockToRun.optimizedLines) {
+        await summonAddress(addr, "pipeline")
+        // Small delay between summons for visual effect
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
+
+      setRunningBlock(null)
+    } else {
+      // Summon single address
+      await summonAddress(addressId, "pipeline")
     }
   }
 
-  const categorizeCodeLine = (line: string): string => {
-    const trimmed = line.trim().toLowerCase()
-    if (trimmed.includes("def ") || trimmed.includes("function ") || trimmed.includes("class ")) return "function"
-    if (trimmed.includes("if ") || trimmed.includes("else") || trimmed.includes("switch")) return "control"
-    if (trimmed.includes("for ") || trimmed.includes("while ") || trimmed.includes("do ")) return "loop"
-    if (trimmed.includes("import ") || trimmed.includes("require(") || trimmed.includes("#include")) return "import"
-    if (trimmed.includes("return ") || trimmed.includes("yield ")) return "return"
-    if (trimmed.includes("try ") || trimmed.includes("catch ") || trimmed.includes("except")) return "error_handling"
-    if (trimmed.includes("console.log") || trimmed.includes("print(") || trimmed.includes("echo")) return "debug"
-    if (trimmed.includes("//") || trimmed.includes("#") || trimmed.includes("/*")) return "comment"
-    return "general"
-  }
-
-  const getFileType = (fileName: string): string => {
-    const extension = fileName.split(".").pop()?.toLowerCase()
-    const typeMap: { [key: string]: string } = {
-      js: "JavaScript",
-      ts: "TypeScript",
-      jsx: "React JSX",
-      tsx: "React TSX",
-      py: "Python",
-      java: "Java",
-      cpp: "C++",
-      c: "C",
-      cs: "C#",
-      php: "PHP",
-      rb: "Ruby",
-      go: "Go",
-      rs: "Rust",
-      swift: "Swift",
-      kt: "Kotlin",
+  useEffect(() => {
+    if (spiralNodes.length > 0) {
+      buildAddressRegistry(spiralNodes)
     }
-    return typeMap[extension || ""] || "Unknown"
-  }
-
-  const calculateFileOptimization = (
-    categories: { [key: string]: number },
-    duplicates: number,
-    total: number,
-  ): number => {
-    const functionWeight = (categories["function"] || 0) * 0.3
-    const controlWeight = (categories["control"] || 0) * 0.2
-    const duplicateWeight = (duplicates / total) * 0.5
-    return Math.min(100, (functionWeight + controlWeight + duplicateWeight) * 100)
-  }
-
-  const calculateOptimizationPotential = (analyses: FileAnalysis[]): number => {
-    const totalPotential = analyses.reduce((sum, analysis) => sum + analysis.optimizationPotential, 0)
-    return analyses.length > 0 ? totalPotential / analyses.length : 0
-  }
-
-  const handleFileUploadMultiple = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length > 0) {
-      setLoadedFiles(files)
-      processMultipleFiles(files)
-    }
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragActive(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) {
-      setLoadedFiles(files)
-      processMultipleFiles(files)
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragActive(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragActive(false)
-  }
-
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      math: "bg-blue-500",
-      crypto: "bg-purple-500",
-      analysis: "bg-green-500",
-      ai: "bg-orange-500",
-      execution: "bg-red-500",
-      data: "bg-cyan-500",
-      control: "bg-yellow-500",
-      validation: "bg-emerald-500",
-      processing: "bg-violet-500",
-    }
-    return colors[category] || "bg-gray-500"
-  }
+  }, [spiralNodes])
 
   useEffect(() => {
     setIsMounted(true)
@@ -1017,16 +1347,36 @@ export default function CodeMapDNASpiral() {
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 dragActive ? "border-green-400 bg-green-900 bg-opacity-20" : "border-gray-600 hover:border-gray-500"
               }`}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+              onDrop={(e) =>
+                handleDrop(
+                  e,
+                  setIsAnalyzing,
+                  setProjectAnalysis,
+                  setSpiralNodes,
+                  setFunctionBlocks,
+                  setInputCode,
+                  setLoadedFiles,
+                  setDragActive,
+                  setIsMounted,
+                  setForkSpirals,
+                  setMapData,
+                  setIsLoading,
+                  setShowFileLoader,
+                  setActiveView,
+                  setSelectedNode,
+                  setRunningBlock,
+                  setExpandedBlocks,
+                )
+              }
+              onDragOver={(e) => handleDragOver(e, setDragActive)}
+              onDragLeave={(e) => handleDragLeave(e, setDragActive)}
             >
               <div className="space-y-4">
                 <div className="text-4xl">📂</div>
                 <div>
                   <p className="text-lg font-medium text-white">Drop files here or click to browse</p>
                   <p className="text-sm text-gray-400 mt-2">
-                    Supports: .js, .ts, .jsx, .tsx, .py, .java, .cpp, .c, .cs, .php, .rb, .go, .rs, .swift, .kt
+                    Supports: .js, .ts, .jsx, .tsx, .py, .java, .cpp, .c, .cs, .php, .rb, .go, .rs, .swift, .kt, .zip
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     Load entire codebases to analyze energy consumption and optimization potential
@@ -1035,8 +1385,28 @@ export default function CodeMapDNASpiral() {
                 <input
                   type="file"
                   multiple
-                  accept=".js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.cs,.php,.rb,.go,.rs,.swift,.kt,.txt"
-                  onChange={handleFileUploadMultiple}
+                  accept=".js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.cs,.php,.rb,.go,.rs,.swift,.kt,.zip,.txt"
+                  onChange={(e) =>
+                    handleFileUploadMultiple(
+                      e,
+                      setIsAnalyzing,
+                      setProjectAnalysis,
+                      setSpiralNodes,
+                      setFunctionBlocks,
+                      setInputCode,
+                      setLoadedFiles,
+                      setDragActive,
+                      setIsMounted,
+                      setForkSpirals,
+                      setMapData,
+                      setIsLoading,
+                      setShowFileLoader,
+                      setActiveView,
+                      setSelectedNode,
+                      setRunningBlock,
+                      setExpandedBlocks,
+                    )
+                  }
                   className="hidden"
                   id="file-upload-multiple"
                 />
@@ -1146,78 +1516,127 @@ export default function CodeMapDNASpiral() {
       <div className="flex h-screen bg-black">
         <div className="w-80 bg-gray-900 border-r border-gray-700 overflow-y-auto">
           <div className="p-4">
-            <h2 className="text-xl font-bold mb-4 text-green-400">Process Index</h2>
+            <h2 className="text-xl font-bold mb-4 text-green-400">Pipeline Control</h2>
 
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold mb-2 text-blue-400">Function Blocks</h3>
-              {functionBlocks.map((block) => (
-                <div key={block.id} className="mb-4 p-3 bg-gray-800 rounded border border-gray-600">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono text-sm text-white">{block.name}</span>
-                    <button
-                      onClick={() => runFromHere(block.startAddress)}
-                      className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors font-medium"
-                      disabled={!!runningBlock}
-                    >
-                      Run Block
-                    </button>
+            <div className="mb-4 p-3 bg-gray-800 rounded border border-gray-600">
+              <h3 className="text-sm font-semibold mb-2 text-blue-400">Active Summons</h3>
+              {activeSummons.length > 0 ? (
+                <div className="space-y-1">
+                  {activeSummons.map((addr) => (
+                    <div key={addr} className="text-xs text-green-300 animate-pulse">
+                      🔄 Summoning {addr.toUpperCase()}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-400">Pipeline idle</div>
+              )}
+            </div>
+
+            <div className="mb-4 p-3 bg-gray-800 rounded border border-gray-600">
+              <h3 className="text-sm font-semibold mb-2 text-blue-400">Recent Calls</h3>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {pipelineCalls
+                  .slice(-5)
+                  .reverse()
+                  .map((call, idx) => (
+                    <div key={idx} className="text-xs flex justify-between">
+                      <span className="text-gray-300">{call.toAddress.toUpperCase()}</span>
+                      <span
+                        className={`font-medium ${
+                          call.status === "completed"
+                            ? "text-green-400"
+                            : call.status === "executing"
+                              ? "text-yellow-400"
+                              : call.status === "failed"
+                                ? "text-red-400"
+                                : "text-gray-400"
+                        }`}
+                      >
+                        {call.status === "completed"
+                          ? "✓"
+                          : call.status === "executing"
+                            ? "⚡"
+                            : call.status === "failed"
+                              ? "✗"
+                              : "⏳"}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <h3 className="text-lg font-semibold mb-2 text-blue-400">Function Blocks</h3>
+            {functionBlocks.map((block) => (
+              <div key={block.id} className="mb-4 p-3 bg-gray-800 rounded border border-gray-600">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-mono text-sm text-white">{block.name}</span>
+                  <button
+                    onClick={() => runFromHere(block.startAddress)}
+                    className="px-2 py-1 bg-green-600 hover:bg-green-500 text-white text-xs rounded transition-colors font-medium"
+                    disabled={!!runningBlock || activeSummons.length > 0}
+                  >
+                    Summon Block
+                  </button>
+                </div>
+
+                <div className="text-xs text-gray-300 mb-2">
+                  <div className="font-semibold text-blue-300">
+                    {block.id.toUpperCase()} consists of lines: {block.lineComposition.join(" ")}
                   </div>
 
-                  <div className="text-xs text-gray-300 mb-2">
-                    <div className="font-semibold text-blue-300">
-                      {block.id.toUpperCase()} consists of lines: {block.lineComposition.join(" ")}
-                    </div>
-
-                    <div className="mt-1 text-gray-400">
-                      Original: {block.originalLines.join(" ")} ({block.originalLines.length} lines)
-                    </div>
-                    <div className="text-green-300">
-                      Optimized: {block.optimizedLines.join(" ")} ({block.optimizedLines.length} lines)
-                    </div>
-
-                    {Object.keys(block.duplicateReplacements).length > 0 && (
-                      <div className="mt-1 text-yellow-300 text-xs">
-                        Duplicates replaced:{" "}
-                        {Object.entries(block.duplicateReplacements)
-                          .map(([duplicate, original]) => `${duplicate}→${original}`)
-                          .join(", ")}
-                      </div>
-                    )}
-
-                    <div className="text-teal-300 font-medium">
-                      Efficiency: {Math.round((1 - block.optimizedLines.length / block.originalLines.length) * 100)}%
-                      reduction
-                    </div>
+                  <div className="mt-1 text-gray-400">
+                    Original: {block.originalLines.join(" ")} ({block.originalLines.length} lines)
+                  </div>
+                  <div className="text-green-300">
+                    Optimized: {block.optimizedLines.join(" ")} ({block.optimizedLines.length} lines)
                   </div>
 
-                  <div className="text-xs text-gray-300">
-                    A{block.startAddress + 1} - A{block.endAddress + 1} ({block.addresses.length} processes)
+                  {Object.keys(block.duplicateReplacements).length > 0 && (
+                    <div className="mt-1 text-yellow-300 text-xs">
+                      Duplicates replaced:{" "}
+                      {Object.entries(block.duplicateReplacements)
+                        .map(([duplicate, original]) => `${duplicate}→${original}`)
+                        .join(", ")}
+                    </div>
+                  )}
+
+                  <div className="text-teal-300 font-medium">
+                    Efficiency: {Math.round((1 - block.optimizedLines.length / block.originalLines.length) * 100)}%
+                    reduction
                   </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="text-xs text-gray-300">
+                  A{block.startAddress + 1} - A{block.endAddress + 1} ({block.addresses.length} processes)
+                </div>
+              </div>
+            ))}
 
             <div className="space-y-2">
               {spiralNodes.map((node, index) => {
                 const containingBlock = functionBlocks.find((block) => block.addresses.includes(index))
                 const lineRef = `a${index + 1}`
                 const isOptimizedOut = containingBlock?.duplicateReplacements[lineRef]
+                const isBeingSummoned = activeSummons.includes(lineRef)
 
                 return (
                   <div
                     key={index}
                     className={`p-3 rounded cursor-pointer transition-all border ${
-                      selectedNode?.index === node.index
-                        ? "bg-yellow-600 border-yellow-400 text-black"
-                        : currentExecutingLine === index
-                          ? "bg-green-600 border-green-400 animate-pulse text-white"
-                          : isOptimizedOut
-                            ? "bg-orange-900 border-orange-600 hover:bg-orange-800 text-white"
-                            : node.isDuplicate
-                              ? "bg-red-900 border-red-600 hover:bg-red-800 text-white"
-                              : node.duplicateCount > 1
-                                ? "bg-teal-900 border-teal-600 hover:bg-teal-800 text-white"
-                                : "bg-gray-800 border-gray-600 hover:bg-gray-700 text-white"
+                      isBeingSummoned
+                        ? "bg-purple-600 border-purple-400 animate-pulse text-white"
+                        : selectedNode?.index === node.index
+                          ? "bg-yellow-600 border-yellow-400 text-black"
+                          : currentExecutingLine === index
+                            ? "bg-green-600 border-green-400 animate-pulse text-white"
+                            : isOptimizedOut
+                              ? "bg-orange-900 border-orange-600 hover:bg-orange-800 text-white"
+                              : node.isDuplicate
+                                ? "bg-red-900 border-red-600 hover:bg-red-800 text-white"
+                                : node.duplicateCount > 1
+                                  ? "bg-teal-900 border-teal-600 hover:bg-teal-800 text-white"
+                                  : "bg-gray-800 border-gray-600 hover:bg-gray-700 text-white"
                     }`}
                     onClick={() => handleAddressClick(node, index)}
                   >
@@ -1226,6 +1645,9 @@ export default function CodeMapDNASpiral() {
                         <span className="font-mono text-sm font-bold">
                           A{index + 1} ({lineRef})
                         </span>
+                        {isBeingSummoned && (
+                          <span className="text-xs text-purple-200 font-bold animate-pulse">🔮 SUMMONED</span>
+                        )}
                         <span
                           className={`px-2 py-1 rounded text-xs text-white font-medium ${getCategoryColor(node.category || "general")}`}
                         >
@@ -1242,12 +1664,12 @@ export default function CodeMapDNASpiral() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          runFromHere(index)
+                          summonAddress(lineRef)
                         }}
-                        className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded transition-colors font-medium"
-                        disabled={!!runningBlock}
+                        className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded transition-colors font-medium"
+                        disabled={!!runningBlock || activeSummons.length > 0}
                       >
-                        Run From Here
+                        Summon
                       </button>
                     </div>
                     <div className="text-xs text-gray-200 mt-1 truncate font-mono">{node.command}</div>
@@ -1300,7 +1722,7 @@ export default function CodeMapDNASpiral() {
           <BirdsEyeView
             nodes={spiralNodes}
             selectedNode={selectedNode}
-            executingProcess={executingProcess}
+            executingProcess={null}
             functionBlocks={functionBlocks}
             expandedBlocks={expandedBlocks}
           />
@@ -1315,3 +1737,5 @@ export default function CodeMapDNASpiral() {
     </div>
   )
 }
+
+export default Page
