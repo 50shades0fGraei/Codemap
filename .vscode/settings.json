@@ -1,0 +1,14 @@
+{
+    "terminal.explorerKind": "both",
+    "terminal.integrated.accessibleViewFocusOnCommandExecution": true,
+    "terminal.integrated.accessibleViewPreserveCursorPosition": true,
+    "terminal.integrated.allowMnemonics": true,
+    "terminal.integrated.confirmOnExit": "always",
+    "terminal.integrated.confirmOnKill": "always",
+    "terminal.integrated.copyOnSelection": true,
+    "terminal.integrated.enableImages": true,
+    "terminal.integrated.fontLigatures.enabled": true,
+    "terminal.integrated.macOptionIsMeta": true,
+    "terminal.integrated.macOptionClickForcesSelection": true,
+    "terminal.integrated.shellIntegration.environmentReporting": true
+}
