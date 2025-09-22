@@ -10,9 +10,6 @@ export const metadata: Metadata = {
   title: "codemap is a product of Emurica patent pending",
   description: "DNA spiral code visualization and mapping system",
   generator: "v0.app",
-  icons: {
-    icon: '/favicon.ico',
-  }
 }
 
 export default function RootLayout({
