@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>App Bundle Layout</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      background: #f5f5f5;
+    }
+    .top-bar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 60px;
+      background: #222;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      z-index: 10;
+    }
+    .top-options {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .file-loader {
+      margin-right: 20px;
+    }
+    .collab-chat {
+      position: absolute;
+      top: 0; right: 0;
+      height: 60px;
+      width: 300px;
+      background: #333;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 11;
+      border-left: 1px solid #444;
+    }
+    .main {
+      position: absolute;
+      top: 60px; left: 0; right: 0; bottom: 0;
+      display: flex;
+      flex-direction: row;
+      height: calc(100vh - 60px);
+    }
+    .functions-list {
+      width: 220px;
+      background: #e3e3e3;
+      padding: 10px;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+    }
+    .center-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .dna-strand {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      min-height: 300px;
+    }
+    .bottom-bar {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 120px;
+      background: #222;
+      color: #fff;
+      display: flex;
+      align-items: flex-start;
+      z-index: 10;
+    }
+    .terminal {
+      flex: 1;
+      padding: 10px;
+      background: #222;
+      color: #0f0;
+      font-family: 'Fira Mono', monospace;
+      font-size: 14px;
+      overflow-y: auto;
+      border-right: 1px solid #444;
+    }
+    .image-2d {
+      width: 300px;
+      height: 100%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-left: 1px solid #ccc;
+    }
+    @media (max-width: 900px) {
+      .functions-list { width: 120px; }
+      .image-2d { width: 120px; }
+      .collab-chat { width: 120px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <div class="top-options">
+      <div class="file-loader">
+        <label for="file-upload">Energy Savings Report:</label>
+        <input type="file" id="file-upload" />
+      </div>
+      <button onclick="alert('Options clicked!')">Options</button>
+      <button onclick="alert('Settings clicked!')">Settings</button>
+      <button onclick="alert('Help clicked!')">Help</button>
+    </div>
+    <div class="collab-chat">
+      <div id="chat-messages" style="flex:1; overflow-y:auto; font-size:12px; padding:5px;"></div>
+      <input id="chat-input" type="text" placeholder="Type a message..." style="width:100px; margin-left:5px;" onkeydown="if(event.key==='Enter'){sendChat();}" />
+    </div>
+  </div>
+  <div class="main">
+    <div class="functions-list">
+      <h3>Functions</h3>
+      <ul id="functions-list">
+        <li onclick="showFunction('Function 1')">Function 1</li>
+        <li onclick="showFunction('Function 2')">Function 2</li>
+        <li onclick="showFunction('Function 3')">Function 3</li>
+      </ul>
+    </div>
+    <div class="center-content">
+      <div class="dna-strand" id="dna-strand">
+        <svg width="300" height="120">
+          <ellipse cx="150" cy="60" rx="120" ry="40" fill="#e0e0ff" />
+          <text x="150" y="65" text-anchor="middle" fill="#333" font-size="18">DNA Strand</text>
+        </svg>
+      </div>
+      <div class="bottom-bar">
+        <div class="terminal" id="terminal">
+          <strong>Terminal</strong><br />
+          <div id="terminal-output">$ echo Hello World</div>
+          <input id="terminal-input" type="text" placeholder="Type a command..." style="width:90%; margin-top:5px;" onkeydown="if(event.key==='Enter'){runTerminal();}" />
+        </div>
+        <div class="image-2d" id="image-2d">
+          <img src="https://via.placeholder.com/120x80?text=2D+Image" alt="2D Image" style="max-width:100%; max-height:100%;" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Collab chat logic
+    function sendChat() {
+      const input = document.getElementById('chat-input');
+      const messages = document.getElementById('chat-messages');
+      if(input.value.trim()) {
+        messages.innerHTML += `<div><b>You:</b> ${input.value}</div>`;
+        input.value = '';
+        messages.scrollTop = messages.scrollHeight;
+      }
+    }
+    // Functions list logic
+    function showFunction(name) {
+      document.getElementById('dna-strand').innerHTML = `<svg width='300' height='120'><ellipse cx='150' cy='60' rx='120' ry='40' fill='#e0e0ff'/><text x='150' y='65' text-anchor='middle' fill='#333' font-size='18'>${name}</text></svg>`;
+    }
+    // Terminal logic
+    function runTerminal() {
+      const input = document.getElementById('terminal-input');
+      const output = document.getElementById('terminal-output');
+      if(input.value.trim()) {
+        output.innerHTML += `<br />$ ${input.value}`;
+        input.value = '';
+      }
+    }
+    // File loader logic
+    document.getElementById('file-upload').addEventListener('change', function(e) {
+      if(e.target.files.length) {
+        alert('Loaded file: ' + e.target.files[0].name);
+      }
+    });
+  </script>
+</body>
+</html>
