@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls } from "@react-three/drei"
+import { Html } from "@react-three/drei" // Import Html for 3D labels
 
 interface ProcessNode {
   index: number
@@ -27,6 +28,9 @@ interface ProcessNode {
   referenceTo?: number
   duplicateCount?: number
   references?: number[]
+  address?: string // Added address property
+  functionName?: string // Added functionName property
+  code?: string // Added code property
 }
 
 // Define DNAProcess interface based on ProcessNode for clarity
@@ -418,7 +422,15 @@ function detectCodeDuplicates(processes: ProcessNode[]): ProcessNode[] {
   return uniqueProcesses.sort((a, b) => a.index - b.index)
 }
 
-function DNASpiral({ nodes, forkSpirals, selectedNode, onNodeClick, onAddressClick }: any) {
+function DNASpiral({
+  nodes,
+  forkSpirals,
+  selectedNode,
+  onNodeClick,
+  onAddressClick,
+  setSelectedFunctionCode,
+  setShowCodeModal,
+}: any) {
   const helixRadius = 10
   const pitch = 5
   const base = 44
@@ -506,15 +518,36 @@ function DNASpiral({ nodes, forkSpirals, selectedNode, onNodeClick, onAddressCli
                 </line>
               )}
 
-              {/* Function nodes */}
-              <mesh position={[mainXPos, yPos, mainZPos]} onClick={() => onAddressClick?.(node.address)}>
-                <sphereGeometry args={[0.5]} />
-                <meshBasicMaterial
-                  color={selectedNode?.index === index ? "#ffffff" : "#06b6d4"}
-                  transparent
-                  opacity={0.9}
-                />
-              </mesh>
+              <group>
+                <mesh
+                  position={[mainXPos, yPos, mainZPos]}
+                  onClick={() => {
+                    onAddressClick?.(node.address)
+                    setSelectedFunctionCode({
+                      name: node.functionName || `Function ${index + 1}`,
+                      address: node.address,
+                      code:
+                        node.code ||
+                        `// Function code for ${node.functionName || `Function ${index + 1}`}\nfunction ${node.functionName || `func${index + 1}`}() {\n  // Implementation here\n  return result;\n}`,
+                      category: node.category || "general",
+                    })
+                    setShowCodeModal(true)
+                  }}
+                >
+                  <sphereGeometry args={[0.5]} />
+                  <meshBasicMaterial
+                    color={selectedNode?.index === index ? "#ffffff" : "#06b6d4"}
+                    transparent
+                    opacity={0.9}
+                  />
+                </mesh>
+
+                <Html position={[mainXPos, yPos + 1.5, mainZPos]} center>
+                  <div className="text-xs text-cyan-300 font-mono bg-black/50 px-1 py-0.5 rounded border border-cyan-500/30 whitespace-nowrap">
+                    {node.functionName || `func${index + 1}`}
+                  </div>
+                </Html>
+              </group>
 
               {/* Subprocess nodes */}
               <mesh position={[compXPos, yPos, compZPos]}>
@@ -528,6 +561,7 @@ function DNASpiral({ nodes, forkSpirals, selectedNode, onNodeClick, onAddressCli
         return null
       })}
 
+      {/* Pipeline flow animation */}
       {Array.from({ length: 20 }, (_, i) => {
         const yPos = 22 - i * 2.2
         const time = Date.now() * 0.002
@@ -547,66 +581,85 @@ function DNASpiral({ nodes, forkSpirals, selectedNode, onNodeClick, onAddressCli
   )
 }
 
-function BirdsEyeView({ nodes, selectedNode, executingProcess, functionBlocks, expandedBlocks }: any) {
+function BirdsEyeView({
+  nodes,
+  selectedNode,
+  executingProcess,
+  functionBlocks,
+  expandedBlocks,
+  setSelectedFunctionCode,
+  setShowCodeModal,
+}: any) {
   const safeNodes = nodes || []
   const safeFunctionBlocks = functionBlocks || []
   const safeExpandedBlocks = expandedBlocks || []
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-black relative overflow-hidden cyber-grid">
-      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/5 to-transparent animate-pulse"></div>
+    <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-black relative overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-radial from-cyan-500/10 via-transparent to-transparent animate-pulse"></div>
+
+      <div className="absolute inset-0 opacity-20">
+        <svg width="100%" height="100%" className="absolute inset-0">
+          <defs>
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+        </svg>
+      </div>
 
       <svg width="100%" height="100%" viewBox="0 0 400 400" className="absolute inset-0">
-        <line x1="200" y1="50" x2="200" y2="350" stroke="#06b6d4" strokeWidth="8" className="helix-glow" />
-        <line x1="200" y1="50" x2="200" y2="350" stroke="#22d3ee" strokeWidth="3" opacity="0.6" />
+        <circle
+          cx="200"
+          cy="200"
+          r="120"
+          fill="none"
+          stroke="#06b6d4"
+          strokeWidth="3"
+          opacity="0.6"
+          className="animate-pulse"
+        />
+        <circle cx="200" cy="200" r="80" fill="none" stroke="#22d3ee" strokeWidth="2" opacity="0.4" />
+        <circle cx="200" cy="200" r="40" fill="none" stroke="#06b6d4" strokeWidth="1" opacity="0.3" />
 
         {safeFunctionBlocks.map((block: FunctionBlock, blockIndex: number) => {
           const isExpanded = safeExpandedBlocks.includes(block.id)
-          const cycloneRadius = isExpanded ? 85 + blockIndex * 10 : 45 + blockIndex * 8
-          const centerY = 100 + blockIndex * 65
+          const spiralRadius = 60 + blockIndex * 25
+          const spiralAngle = (blockIndex * Math.PI * 2) / Math.max(safeFunctionBlocks.length, 1)
+          const centerX = 200 + spiralRadius * Math.cos(spiralAngle)
+          const centerY = 200 + spiralRadius * Math.sin(spiralAngle)
 
           return (
             <g key={block.id}>
               <circle
-                cx="200"
+                cx={centerX}
                 cy={centerY}
-                r={cycloneRadius}
+                r={isExpanded ? 45 : 30}
                 fill="none"
                 stroke={isExpanded ? "#06b6d4" : "#22d3ee"}
-                strokeWidth={isExpanded ? 5 : 3}
-                strokeDasharray={isExpanded ? "10,5" : "5,3"}
-                className={isExpanded ? "spiral-flow dna-pulse" : ""}
-                style={{ animationDuration: "4s" }}
+                strokeWidth={isExpanded ? 3 : 2}
+                strokeDasharray={isExpanded ? "8,4" : "4,2"}
+                className={isExpanded ? "animate-pulse" : ""}
                 filter="url(#glow)"
-              />
-
-              <circle
-                cx="200"
-                cy={centerY}
-                r={cycloneRadius * 0.7}
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth="2"
-                opacity="0.4"
-                className="animate-pulse"
               />
 
               {(block.addresses || []).map((addressIndex, i) => {
                 const node = safeNodes[addressIndex]
                 if (!node) return null
 
-                // Proper spiral positioning
-                const spiralAngle = (i / block.addresses.length) * 4 * Math.PI
-                const spiralRadius = cycloneRadius * (0.8 - (i / block.addresses.length) * 0.3)
-                const spiralX = 200 + spiralRadius * Math.cos(spiralAngle)
-                const spiralY = centerY + spiralRadius * Math.sin(spiralAngle)
+                // Better spiral positioning within cluster
+                const nodeAngle = (i / block.addresses.length) * Math.PI * 2
+                const nodeRadius = isExpanded ? 35 : 20
+                const nodeX = centerX + nodeRadius * Math.cos(nodeAngle)
+                const nodeY = centerY + nodeRadius * Math.sin(nodeAngle)
 
                 return (
                   <g key={`address-${addressIndex}`}>
                     <circle
-                      cx={spiralX}
-                      cy={spiralY}
-                      r={selectedNode?.index === addressIndex ? 14 : 10}
+                      cx={nodeX}
+                      cy={nodeY}
+                      r={selectedNode?.index === addressIndex ? 8 : 6}
                       fill={
                         executingProcess?.index === addressIndex
                           ? "#ffffff"
@@ -616,26 +669,38 @@ function BirdsEyeView({ nodes, selectedNode, executingProcess, functionBlocks, e
                               ? "#dc2626"
                               : "#22d3ee"
                       }
-                      className={executingProcess?.index === addressIndex ? "dna-pulse" : ""}
+                      className={executingProcess?.index === addressIndex ? "animate-pulse" : ""}
                       filter="url(#glow)"
+                      onClick={() => {
+                        setSelectedFunctionCode({
+                          name: node.functionName || `Function ${addressIndex + 1}`,
+                          address: node.address,
+                          code:
+                            node.code ||
+                            `// Function code for ${node.functionName || `Function ${addressIndex + 1}`}\nfunction ${node.functionName || `func${addressIndex + 1}`}() {\n  // Implementation here\n  return result;\n}`,
+                          category: node.category || "general",
+                        })
+                        setShowCodeModal(true)
+                      }}
+                      style={{ cursor: "pointer" }}
                     />
 
                     <text
-                      x={spiralX}
-                      y={spiralY - 18}
+                      x={nodeX}
+                      y={nodeY - 12}
                       textAnchor="middle"
-                      className="text-xs fill-white font-mono font-bold"
+                      className="text-xs fill-cyan-300 font-mono font-bold"
                       filter="url(#textGlow)"
                     >
-                      A{addressIndex + 1}
+                      {node.functionName || `F${addressIndex + 1}`}
                     </text>
                   </g>
                 )
               })}
 
               <text
-                x="200"
-                y={centerY}
+                x={centerX}
+                y={centerY + (isExpanded ? 55 : 40)}
                 textAnchor="middle"
                 className="text-sm fill-white font-mono font-bold"
                 filter="url(#textGlow)"
@@ -667,587 +732,31 @@ function BirdsEyeView({ nodes, selectedNode, executingProcess, functionBlocks, e
   )
 }
 
-// Renamed from parseCodeToProcesses to generateDNAProcesses
-// Changed ProcessNode to DNAProcess for clarity
-const generateDNAProcesses = (lines: string[]): DNAProcess[] => {
-  const processes: DNAProcess[] = []
+const FunctionCodeModal = ({ isOpen, onClose, functionData }: any) => {
+  if (!isOpen || !functionData) return null
 
-  lines.forEach((line, index) => {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("#")) return
-
-    const category = categorizeCode(trimmed)
-    const is_fork = trimmed.includes("if") || trimmed.includes("for") || trimmed.includes("while")
-    const fork_type = is_fork ? (trimmed.includes("if") ? "conditional" : "loop") : null
-
-    const totalHeight = 40
-    const heightStep = totalHeight / lines.length
-    const yPos = 20 - index * heightStep * 0.8
-
-    const spiralRadius = 6
-    const spiralTurns = 4
-
-    const baseAngle = (index * spiralTurns * 2 * Math.PI) / Math.max(lines.length, 1)
-
-    // Main process spiral - clean sine/cosine
-    const mainXPos = spiralRadius * Math.cos(baseAngle)
-    const mainZPos = spiralRadius * Math.sin(baseAngle)
-
-    // Subprocess spiral - 180 degree offset
-    const subXPos = spiralRadius * Math.cos(baseAngle + Math.PI)
-    const subZPos = spiralRadius * Math.sin(baseAngle + Math.PI)
-
-    const bases = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")
-    const base_char = bases[index % bases.length]
-
-    processes.push({
-      index,
-      coords: [mainXPos, yPos, mainZPos] as [number, number, number],
-      strand: 0,
-      base: base_char,
-      complement: bases[bases.length - 1 - (index % bases.length)],
-      angle: baseAngle,
-      base_pair_id: `${base_char}-${bases[bases.length - 1 - (index % bases.length)]}`,
-      command: trimmed,
-      category,
-      is_fork,
-      fork_type,
-      spiral_id: "main",
-    })
-
-    processes.push({
-      index: index + 0.5,
-      coords: [subXPos, yPos, subZPos] as [number, number, number],
-      strand: 1,
-      base: base_char,
-      complement: bases[bases.length - 1 - (index % bases.length)],
-      angle: baseAngle + Math.PI,
-      base_pair_id: `${base_char}-${bases[bases.length - 1 - (index % bases.length)]}-sub`,
-      command: `// Background: ${trimmed}`,
-      category: "subprocess",
-      is_fork,
-      fork_type,
-      spiral_id: "subprocess",
-    })
-  })
-
-  return processes
-}
-
-// Helper function to categorize code lines
-const categorizeCode = (line: string): string => {
-  const trimmed = line.trim().toLowerCase()
-  if (trimmed.includes("def ") || trimmed.includes("function ") || trimmed.includes("class ")) return "function"
-  if (trimmed.includes("if ") || trimmed.includes("else") || trimmed.includes("switch")) return "control"
-  if (trimmed.includes("for ") || trimmed.includes("while ") || trimmed.includes("do ")) return "loop"
-  if (trimmed.includes("import ") || trimmed.includes("require(") || trimmed.includes("#include")) return "import"
-  if (trimmed.includes("return ") || trimmed.includes("yield ")) return "return"
-  if (trimmed.includes("try ") || trimmed.includes("catch ") || trimmed.includes("except")) return "error_handling"
-  if (trimmed.includes("console.log") || trimmed.includes("print(") || trimmed.includes("echo")) return "debug"
-  if (trimmed.includes("//") || trimmed.includes("#") || trimmed.includes("/*")) return "comment"
-  if (trimmed.includes("+") || trimmed.includes("-") || trimmed.includes("*") || trimmed.includes("/")) return "math"
-  if (trimmed.includes("fetch") || trimmed.includes("axios") || trimmed.includes("http")) return "api"
-  if (trimmed.includes("crypto") || trimmed.includes("hash") || trimmed.includes("encrypt")) return "crypto"
-  if (trimmed.includes("analyze") || trimmed.includes("report") || trimmed.includes("metrics")) return "analysis"
-  if (trimmed.includes("ai") || trimmed.includes("model") || trimmed.includes("predict")) return "ai"
-  if (trimmed.includes("execute") || trimmed.includes("run ") || trimmed.includes("process")) return "execution"
-  if (trimmed.includes("validate") || trimmed.includes("check") || trimmed.includes("assert")) return "validation"
-  return "general"
-}
-
-const handleZipFile = async (
-  file: File,
-  setIsAnalyzing: any,
-  setProjectAnalysis: any,
-  setSpiralNodes: any,
-  setFunctionBlocks: any,
-  setInputCode: any,
-  setLoadedFiles: any,
-  setDragActive: any,
-  setIsMounted: any,
-  setForkSpirals: any,
-  setMapData: any,
-  setIsLoading: any,
-  setShowFileLoader: any,
-  setActiveView: any,
-  setSelectedNode: any,
-  setRunningBlock: any,
-  setExpandedBlocks: any,
-) => {
-  setIsAnalyzing(true)
-
-  try {
-    // Import JSZip dynamically to avoid bundle bloat
-    const JSZip = (await import("jszip")).default
-    const zip = new JSZip()
-    const zipContent = await zip.loadAsync(file)
-
-    const files: File[] = []
-    const batchSize = 10 // Process files in batches to avoid overwhelming the system
-
-    // Extract files from zip
-    for (const [filename, zipEntry] of Object.entries(zipContent.files)) {
-      if (!zipEntry.dir && isCodeFile(filename)) {
-        const content = await zipEntry.async("text")
-        const blob = new Blob([content], { type: "text/plain" })
-        const extractedFile = new File([blob], filename, { type: "text/plain" })
-        files.push(extractedFile)
-      }
-    }
-
-    console.log(`[v0] Extracted ${files.length} code files from zip`)
-
-    // Process files in batches to reduce operations
-    const batches = []
-    for (let i = 0; i < files.length; i += batchSize) {
-      batches.push(files.slice(i, i + batchSize))
-    }
-
-    console.log(`[v0] Processing ${batches.length} batches of files`)
-
-    // Process batches sequentially to avoid overwhelming the system
-    for (let i = 0; i < batches.length; i++) {
-      console.log(`[v0] Processing batch ${i + 1}/${batches.length}`)
-      await processMultipleFiles(
-        batches[i],
-        setIsAnalyzing,
-        setProjectAnalysis,
-        setSpiralNodes,
-        setFunctionBlocks,
-        setInputCode,
-        setLoadedFiles,
-        setDragActive,
-        setIsMounted,
-        setForkSpirals,
-        setMapData,
-        setIsLoading,
-        setShowFileLoader,
-        setActiveView,
-        setSelectedNode,
-        setRunningBlock,
-        setExpandedBlocks,
-      )
-
-      // Add small delay between batches to prevent UI freezing
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  } catch (error) {
-    console.error("[v0] Error processing zip file:", error)
-  } finally {
-    setIsAnalyzing(false)
-  }
-}
-
-const isCodeFile = (filename: string): boolean => {
-  const codeExtensions = [
-    ".js",
-    ".ts",
-    ".jsx",
-    ".tsx",
-    ".py",
-    ".java",
-    ".cpp",
-    ".c",
-    ".cs",
-    ".php",
-    ".rb",
-    ".go",
-    ".rs",
-    ".swift",
-    ".kt",
-  ]
-  return codeExtensions.some((ext) => filename.toLowerCase().endsWith(ext))
-}
-
-function handleFileUpload(
-  event: React.ChangeEvent<HTMLInputElement>,
-  setIsAnalyzing: any,
-  setProjectAnalysis: any,
-  setSpiralNodes: any,
-  setFunctionBlocks: any,
-  setInputCode: any,
-  setLoadedFiles: any,
-  setDragActive: any,
-  setIsMounted: any,
-  setForkSpirals: any,
-  setMapData: any,
-  setIsLoading: any,
-  setShowFileLoader: any,
-  setActiveView: any,
-  setSelectedNode: any,
-  setRunningBlock: any,
-  setExpandedBlocks: any,
-) {
-  const file = event.target.files?.[0]
-  if (file) {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const code = e.target?.result as string
-      console.log(code)
-      processMultipleFiles(
-        [file],
-        setIsAnalyzing,
-        setProjectAnalysis,
-        setSpiralNodes,
-        setFunctionBlocks,
-        setInputCode,
-        setLoadedFiles,
-        setDragActive,
-        setIsMounted,
-        setForkSpirals,
-        setMapData,
-        setIsLoading,
-        setShowFileLoader,
-        setActiveView,
-        setSelectedNode,
-        setRunningBlock,
-        setExpandedBlocks,
-      )
-    }
-    reader.readAsText(file)
-  }
-}
-
-const processMultipleFiles = async (
-  files: File[],
-  setIsAnalyzing: any,
-  setProjectAnalysis: any,
-  setSpiralNodes: any,
-  setFunctionBlocks: any,
-  setInputCode: any,
-  setLoadedFiles: any,
-  setDragActive: any,
-  setIsMounted: any,
-  setForkSpirals: any,
-  setMapData: any,
-  setIsLoading: any,
-  setShowFileLoader: any,
-  setActiveView: any,
-  setSelectedNode: any,
-  setRunningBlock: any,
-  setExpandedBlocks: any,
-) => {
-  if (files.length === 0) return
-
-  setIsAnalyzing(true)
-  const fileAnalyses: FileAnalysis[] = []
-  const globalCodeMap = new Map<string, string[]>()
-  let totalLines = 0
-  let totalDuplicates = 0
-
-  // Batch read all files first
-  const fileContents = await Promise.all(
-    files.map(async (file) => ({
-      file,
-      content: await readFileContent(file),
-    })),
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-cyan-500/30 rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-cyan-500/30">
+          <div>
+            <h3 className="text-lg font-mono font-bold text-cyan-300">{functionData.name}</h3>
+            <p className="text-sm text-cyan-500">Address: {functionData.address}</p>
+          </div>
+          <button onClick={onClose} className="text-cyan-300 hover:text-white transition-colors">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-4 overflow-auto max-h-[60vh]">
+          <pre className="text-sm text-cyan-100 font-mono bg-black/50 p-4 rounded border border-cyan-500/20 overflow-x-auto">
+            <code>{functionData.code}</code>
+          </pre>
+        </div>
+      </div>
+    </div>
   )
-
-  // Then analyze all at once instead of one by one
-  fileContents.forEach(({ file, content }) => {
-    const analysis = analyzeFile(file.name, content, globalCodeMap)
-    fileAnalyses.push(analysis)
-    totalLines += analysis.totalLines
-    totalDuplicates += analysis.duplicateLines
-  })
-
-  const overallEnergySavings = totalDuplicates > 0 ? (totalDuplicates / totalLines) * 100 : 0
-  const optimizationPotential = calculateOptimizationPotential(fileAnalyses)
-
-  const projectAnalysis: ProjectAnalysis = {
-    totalFiles: files.length,
-    totalLines,
-    totalDuplicates,
-    overallEnergySavings,
-    optimizationPotential,
-    fileAnalyses,
-    globalDuplicates: Object.fromEntries(
-      Array.from(globalCodeMap.entries()).filter(([_, locations]) => locations.length > 1),
-    ),
-  }
-
-  setProjectAnalysis(projectAnalysis)
-  setIsAnalyzing(false)
-
-  // Process the first file for visualization
-  if (files.length > 0) {
-    const firstFileContent = await readFileContent(files[0])
-    const processes = generateDNAProcesses(firstFileContent.split("\n")) // Use the renamed function and split lines
-    const processedNodes = detectCodeDuplicates(processes)
-    const blocks = detectFunctionBlocks(processedNodes)
-
-    setSpiralNodes(processedNodes)
-    setFunctionBlocks(blocks)
-    setInputCode(firstFileContent)
-  }
-}
-
-const readFileContent = (file: File): Promise<string> => {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => resolve(e.target?.result as string)
-    reader.readAsText(file)
-  })
-}
-
-const analyzeFile = (fileName: string, content: string, globalCodeMap: Map<string, string[]>): FileAnalysis => {
-  const lines = content.split("\n").filter((line) => line.trim())
-  const lineMap = new Map<string, number>()
-  const categories: { [key: string]: number } = {}
-
-  lines.forEach((line, index) => {
-    const normalized = line.trim().toLowerCase()
-    if (normalized) {
-      // Track global duplicates across all files
-      if (!globalCodeMap.has(normalized)) {
-        globalCodeMap.set(normalized, [])
-      }
-      globalCodeMap.get(normalized)!.push(`${fileName}:${index + 1}`)
-
-      // Track local duplicates
-      lineMap.set(normalized, (lineMap.get(normalized) || 0) + 1)
-
-      // Categorize lines
-      const category = categorizeCodeLine(line)
-      categories[category] = (categories[category] || 0) + 1
-    }
-  })
-
-  const duplicateLines = Array.from(lineMap.values()).reduce((sum, count) => sum + (count > 1 ? count - 1 : 0), 0)
-  const uniqueLines = lines.length - duplicateLines
-  const energySavings = duplicateLines > 0 ? (duplicateLines / lines.length) * 100 : 0
-  const optimizationPotential = calculateFileOptimization(categories, duplicateLines, lines.length)
-
-  return {
-    fileName,
-    fileType: getFileType(fileName),
-    totalLines: lines.length,
-    duplicateLines,
-    uniqueLines,
-    energySavings,
-    optimizationPotential,
-    functionBlocks: categories["function"] || 0,
-    categories,
-  }
-}
-
-const categorizeCodeLine = (line: string): string => {
-  const trimmed = line.trim().toLowerCase()
-  if (trimmed.includes("def ") || trimmed.includes("function ") || trimmed.includes("class ")) return "function"
-  if (trimmed.includes("if ") || trimmed.includes("else") || trimmed.includes("switch")) return "control"
-  if (trimmed.includes("for ") || trimmed.includes("while ") || trimmed.includes("do ")) return "loop"
-  if (trimmed.includes("import ") || trimmed.includes("require(") || trimmed.includes("#include")) return "import"
-  if (trimmed.includes("return ") || trimmed.includes("yield ")) return "return"
-  if (trimmed.includes("try ") || trimmed.includes("catch ") || trimmed.includes("except")) return "error_handling"
-  if (trimmed.includes("console.log") || trimmed.includes("print(") || trimmed.includes("echo")) return "debug"
-  if (trimmed.includes("//") || trimmed.includes("#") || trimmed.includes("/*")) return "comment"
-  return "general"
-}
-
-const getFileType = (fileName: string): string => {
-  const extension = fileName.split(".").pop()?.toLowerCase()
-  const typeMap: { [key: string]: string } = {
-    js: "JavaScript",
-    ts: "TypeScript",
-    jsx: "React JSX",
-    tsx: "React TSX",
-    py: "Python",
-    java: "Java",
-    cpp: "C++",
-    c: "C",
-    cs: "C#",
-    php: "PHP",
-    rb: "Ruby",
-    go: "Go",
-    rs: "Rust",
-    swift: "Swift",
-    kt: "Kotlin",
-  }
-  return typeMap[extension || ""] || "Unknown"
-}
-
-const calculateFileOptimization = (
-  categories: { [key: string]: number },
-  duplicates: number,
-  total: number,
-): number => {
-  const functionWeight = (categories["function"] || 0) * 0.3
-  const controlWeight = (categories["control"] || 0) * 0.2
-  const duplicateWeight = (duplicates / total) * 0.5
-  return Math.min(100, (functionWeight + controlWeight + duplicateWeight) * 100)
-}
-
-const calculateOptimizationPotential = (analyses: FileAnalysis[]): number => {
-  const totalPotential = analyses.reduce((sum, analysis) => sum + analysis.optimizationPotential, 0)
-  return analyses.length > 0 ? totalPotential / analyses.length : 0
-}
-
-const handleFileUploadMultiple = async (
-  event: React.ChangeEvent<HTMLInputElement>,
-  setIsAnalyzing: any,
-  setProjectAnalysis: any,
-  setSpiralNodes: any,
-  setFunctionBlocks: any,
-  setInputCode: any,
-  setLoadedFiles: any,
-  setDragActive: any,
-  setIsMounted: any,
-  setForkSpirals: any,
-  setMapData: any,
-  setIsLoading: any,
-  setShowFileLoader: any,
-  setActiveView: any,
-  setSelectedNode: any,
-  setRunningBlock: any,
-  setExpandedBlocks: any,
-) => {
-  const files = Array.from(event.target.files || [])
-  if (files.length === 0) return
-
-  const firstFile = files[0]
-
-  // Check if it's a zip file
-  if (firstFile.name.toLowerCase().endsWith(".zip")) {
-    console.log("[v0] Detected zip file, processing...")
-    await handleZipFile(
-      firstFile,
-      setIsAnalyzing,
-      setProjectAnalysis,
-      setSpiralNodes,
-      setFunctionBlocks,
-      setInputCode,
-      setLoadedFiles,
-      setDragActive,
-      setIsMounted,
-      setForkSpirals,
-      setMapData,
-      setIsLoading,
-      setShowFileLoader,
-      setActiveView,
-      setSelectedNode,
-      setRunningBlock,
-      setExpandedBlocks,
-    )
-  } else {
-    console.log(`[v0] Processing ${files.length} individual files`)
-    setLoadedFiles(files)
-    await processMultipleFiles(
-      files,
-      setIsAnalyzing,
-      setProjectAnalysis,
-      setSpiralNodes,
-      setFunctionBlocks,
-      setInputCode,
-      setLoadedFiles,
-      setDragActive,
-      setIsMounted,
-      setForkSpirals,
-      setMapData,
-      setIsLoading,
-      setShowFileLoader,
-      setActiveView,
-      setSelectedNode,
-      setRunningBlock,
-      setExpandedBlocks,
-    )
-  }
-}
-
-const handleDrop = async (
-  e: React.DragEvent,
-  setIsAnalyzing: any,
-  setProjectAnalysis: any,
-  setSpiralNodes: any,
-  setFunctionBlocks: any,
-  setInputCode: any,
-  setLoadedFiles: any,
-  setDragActive: any,
-  setIsMounted: any,
-  setForkSpirals: any,
-  setMapData: any,
-  setIsLoading: any,
-  setShowFileLoader: any,
-  setActiveView: any,
-  setSelectedNode: any,
-  setRunningBlock: any,
-  setExpandedBlocks: any,
-) => {
-  e.preventDefault()
-  setDragActive(false)
-  const files = Array.from(e.dataTransfer.files)
-  if (files.length === 0) return
-
-  const firstFile = files[0]
-
-  if (firstFile.name.toLowerCase().endsWith(".zip")) {
-    console.log("[v0] Detected zip file via drag and drop, processing...")
-    await handleZipFile(
-      firstFile,
-      setIsAnalyzing,
-      setProjectAnalysis,
-      setSpiralNodes,
-      setFunctionBlocks,
-      setInputCode,
-      setLoadedFiles,
-      setDragActive,
-      setIsMounted,
-      setForkSpirals,
-      setMapData,
-      setIsLoading,
-      setShowFileLoader,
-      setActiveView,
-      setSelectedNode,
-      setRunningBlock,
-      setExpandedBlocks,
-    )
-  } else {
-    console.log(`[v0] Processing ${files.length} dragged files`)
-    setLoadedFiles(files)
-    await processMultipleFiles(
-      files,
-      setIsAnalyzing,
-      setProjectAnalysis,
-      setSpiralNodes,
-      setFunctionBlocks,
-      setInputCode,
-      setLoadedFiles,
-      setDragActive,
-      setIsMounted,
-      setForkSpirals,
-      setMapData,
-      setIsLoading,
-      setShowFileLoader,
-      setActiveView,
-      setSelectedNode,
-      setRunningBlock,
-      setExpandedBlocks,
-    )
-  }
-}
-
-const handleDragOver = (e: React.DragEvent, setDragActive: any) => {
-  e.preventDefault()
-  setDragActive(true)
-}
-
-const handleDragLeave = (e: React.DragEvent, setDragActive: any) => {
-  e.preventDefault()
-  setDragActive(false)
-}
-
-const getCategoryColor = (category: string) => {
-  const colors: Record<string, string> = {
-    math: "bg-indigo-500",
-    crypto: "bg-purple-500",
-    analysis: "bg-violet-500",
-    ai: "bg-indigo-600",
-    execution: "bg-blue-500",
-    data: "bg-cyan-500",
-    control: "bg-indigo-400",
-    validation: "bg-purple-600",
-    processing: "bg-violet-600",
-  }
-  return colors[category] || "bg-gray-500"
 }
 
 const Page = () => {
@@ -1268,6 +777,9 @@ const Page = () => {
   const [runningBlock, setRunningBlock] = useState<FunctionBlock | null>(null)
   const [expandedBlocks, setExpandedBlocks] = useState<string[]>([])
   const [inputCode, setInputCode] = useState("")
+
+  const [showCodeModal, setShowCodeModal] = useState(false)
+  const [selectedFunctionCode, setSelectedFunctionCode] = useState<any>(null)
 
   const [addressRegistry, setAddressRegistry] = useState<AddressRegistry>({})
   const [pipelineCalls, setPipelineCalls] = useState<PipelineCall[]>([])
@@ -1406,7 +918,6 @@ const Page = () => {
       code: functionCode,
       parameters: extractParameters(functionCode),
       returnType: extractReturnType(functionCode),
-      category,
       tags: extractTags(functionCode),
       dnaAddress: `L${functionLibrary.length + 1}`,
       usageCount: 0,
@@ -1640,20 +1151,331 @@ const Page = () => {
     return tags
   }
 
+  const getCategoryColor = (category: string) => {
+    switch (category.toLowerCase()) {
+      case "dna operations":
+        return "bg-primary"
+      case "function library":
+        return "bg-secondary"
+      case "project management":
+        return "bg-accent"
+      case "code analysis":
+        return "bg-chart-3"
+      case "system":
+        return "bg-destructive"
+      case "development":
+        return "bg-purple-500"
+      case "math":
+        return "bg-green-500"
+      case "control":
+        return "bg-orange-500"
+      case "data":
+        return "bg-blue-500"
+      case "validation":
+        return "bg-pink-500"
+      default:
+        return "bg-gray-500"
+    }
+  }
+
+  const handleDrop = (
+    e: React.DragEvent<HTMLDivElement>,
+    setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>,
+    setProjectAnalysis: React.Dispatch<React.SetStateAction<ProjectAnalysis | null>>,
+    setSpiralNodes: React.Dispatch<React.SetStateAction<ProcessNode[]>>,
+    setFunctionBlocks: React.Dispatch<React.SetStateAction<FunctionBlock[]>>,
+    setInputCode: React.Dispatch<React.SetStateAction<string>>,
+    setLoadedFiles: React.Dispatch<React.SetStateAction<File[]>>,
+    setDragActive: React.Dispatch<React.SetStateAction<boolean>>,
+    setIsMounted: React.Dispatch<React.SetStateAction<boolean>>,
+    setForkSpirals: React.Dispatch<React.SetStateAction<ForkSpiral[]>>,
+    setMapData: React.Dispatch<React.SetStateAction<MapData[]>>,
+    setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
+    setShowFileLoader: React.Dispatch<React.SetStateAction<boolean>>,
+    setActiveView: React.Dispatch<React.SetStateAction<string>>,
+    setSelectedNode: React.Dispatch<React.SetStateAction<ProcessNode | null>>,
+    setRunningBlock: React.Dispatch<React.SetStateAction<FunctionBlock | null>>,
+    setExpandedBlocks: React.Dispatch<React.SetStateAction<string[]>>,
+  ) => {
+    e.preventDefault()
+    setDragActive(false)
+    const files = Array.from(e.dataTransfer.files)
+    handleFiles(files, {
+      setIsAnalyzing,
+      setProjectAnalysis,
+      setSpiralNodes,
+      setFunctionBlocks,
+      setInputCode,
+      setLoadedFiles,
+      setIsMounted,
+      setForkSpirals,
+      setMapData,
+      setIsLoading,
+      setShowFileLoader,
+      setActiveView,
+      setSelectedNode,
+      setRunningBlock,
+      setExpandedBlocks,
+    })
+  }
+
+  const handleDragOver = (
+    e: React.DragEvent<HTMLDivElement>,
+    setDragActive: React.Dispatch<React.SetStateAction<boolean>>,
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(true)
+  }
+
+  const handleDragLeave = (
+    e: React.DragEvent<HTMLDivElement>,
+    setDragActive: React.Dispatch<React.SetStateAction<boolean>>,
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+  }
+
+  const handleFileUploadMultiple = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>,
+    setProjectAnalysis: React.Dispatch<React.SetStateAction<ProjectAnalysis | null>>,
+    setSpiralNodes: React.Dispatch<React.SetStateAction<ProcessNode[]>>,
+    setFunctionBlocks: React.Dispatch<React.SetStateAction<FunctionBlock[]>>,
+    setInputCode: React.Dispatch<React.SetStateAction<string>>,
+    setLoadedFiles: React.Dispatch<React.SetStateAction<File[]>>,
+    setIsMounted: React.Dispatch<React.SetStateAction<boolean>>,
+    setForkSpirals: React.Dispatch<React.SetStateAction<ForkSpiral[]>>,
+    setMapData: React.Dispatch<React.SetStateAction<MapData[]>>,
+    setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
+    setShowFileLoader: React.Dispatch<React.SetStateAction<boolean>>,
+    setActiveView: React.Dispatch<React.SetStateAction<string>>,
+    setSelectedNode: React.Dispatch<React.SetStateAction<ProcessNode | null>>,
+    setRunningBlock: React.Dispatch<React.SetStateAction<FunctionBlock | null>>,
+    setExpandedBlocks: React.Dispatch<React.SetStateAction<string[]>>,
+  ) => {
+    const files = Array.from(e.target.files || [])
+    handleFiles(files, {
+      setIsAnalyzing,
+      setProjectAnalysis,
+      setSpiralNodes,
+      setFunctionBlocks,
+      setInputCode,
+      setLoadedFiles,
+      setIsMounted,
+      setForkSpirals,
+      setMapData,
+      setIsLoading,
+      setShowFileLoader,
+      setActiveView,
+      setSelectedNode,
+      setRunningBlock,
+      setExpandedBlocks,
+    })
+  }
+
+  const handleFiles = async (
+    files: File[],
+    setters: {
+      setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>
+      setProjectAnalysis: React.Dispatch<React.SetStateAction<ProjectAnalysis | null>>
+      setSpiralNodes: React.Dispatch<React.SetStateAction<ProcessNode[]>>
+      setFunctionBlocks: React.Dispatch<React.SetStateAction<FunctionBlock[]>>
+      setInputCode: React.Dispatch<React.SetStateAction<string>>
+      setLoadedFiles: React.Dispatch<React.SetStateAction<File[]>>
+      setIsMounted: React.Dispatch<React.SetStateAction<boolean>>
+      setForkSpirals: React.Dispatch<React.SetStateAction<ForkSpiral[]>>
+      setMapData: React.Dispatch<React.SetStateAction<MapData[]>>
+      setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
+      setShowFileLoader: React.Dispatch<React.SetStateAction<boolean>>
+      setActiveView: React.Dispatch<React.SetStateAction<string>>
+      setSelectedNode: React.Dispatch<React.SetStateAction<ProcessNode | null>>
+      setRunningBlock: React.Dispatch<React.SetStateAction<FunctionBlock | null>>
+      setExpandedBlocks: React.Dispatch<React.SetStateAction<string[]>>
+    },
+  ) => {
+    setters.setIsAnalyzing(true)
+    setters.setLoadedFiles(files)
+    setters.setShowFileLoader(false)
+
+    // Simulate analysis and data generation
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    const sampleProjectAnalysis: ProjectAnalysis = {
+      totalFiles: files.length,
+      totalLines: 5000 + files.length * 100,
+      totalDuplicates: 500 + files.length * 20,
+      overallEnergySavings: 15.5,
+      optimizationPotential: 25.0,
+      fileAnalyses: files.map((file) => ({
+        fileName: file.name,
+        fileType: file.name.split(".").pop() || "unknown",
+        totalLines: 1000,
+        duplicateLines: 100,
+        uniqueLines: 900,
+        energySavings: 10.2,
+        optimizationPotential: 20.0,
+        functionBlocks: Math.floor(Math.random() * 5),
+        categories: {
+          logic: 3,
+          ui: 2,
+          api: 1,
+        },
+      })),
+      globalDuplicates: {
+        common_function_a: ["file1.js", "file2.ts"],
+        duplicate_loop_b: ["file3.py", "file4.java"],
+      },
+    }
+
+    const sampleNodes: ProcessNode[] = Array.from({ length: 50 }, (_, i) => {
+      const angle = (i / 50) * Math.PI * 5
+      const radius = 10
+      const height = 25 - i * 0.5
+      const smoothAngle = angle + Math.sin(angle * 2) * 0.3
+      const command = [
+        "fetch_data",
+        "process_data",
+        "render_ui",
+        "save_config",
+        "validate_input",
+        "calculate_sum",
+        "if_condition",
+        "loop_items",
+      ][i % 8]
+      const category = ["data", "data", "ui", "config", "validation", "math", "control", "control"][i % 8]
+      const isDuplicate = i % 5 === 0
+      const duplicateCount = isDuplicate ? Math.floor(Math.random() * 3) + 2 : 1
+      const referenceTo = isDuplicate ? i - Math.floor(Math.random() * 5) - 1 : undefined
+
+      return {
+        index: i,
+        coords: [Math.cos(smoothAngle) * radius, height, Math.sin(smoothAngle) * radius] as [number, number, number],
+        strand: i % 2,
+        base: ["A", "T", "C", "G"][i % 4],
+        complement: ["T", "A", "G", "C"][i % 4],
+        angle: 0,
+        base_pair_id: `bp-${i}`,
+        command: `${command}_${i}`,
+        category: category,
+        isDuplicate: isDuplicate,
+        duplicateCount: duplicateCount,
+        referenceTo: referenceTo,
+        address: `a${i + 1}`,
+        functionName: `${command}_${i}`,
+        code: `function ${command}_${i}() {\n  // Sample code for ${command}\n  console.log('Executing ${command}_${i}');\n  return ${Math.random()};\n}`,
+      }
+    })
+
+    const sampleFunctionBlocks: FunctionBlock[] = [
+      {
+        id: "func-1",
+        name: "Data Processing Pipeline",
+        startAddress: 1,
+        endAddress: 5,
+        addresses: [1, 2, 3, 4, 5],
+        lineComposition: ["a2", "a3", "a4", "a5"],
+        originalLines: ["a2", "a3", "a4", "a5"],
+        optimizedLines: ["a2", "a3", "a4", "a5"],
+        duplicateReplacements: {},
+        category: "data",
+        description: "Processes fetched data",
+      },
+      {
+        id: "func-2",
+        name: "UI Rendering",
+        startAddress: 7,
+        endAddress: 10,
+        addresses: [7, 8, 9, 10],
+        lineComposition: ["a8", "a9", "a10"],
+        originalLines: ["a7", "a8", "a9", "a10"],
+        optimizedLines: ["a7", "a8", "a9", "a10"],
+        duplicateReplacements: {},
+        category: "ui",
+        description: "Renders the user interface",
+      },
+    ]
+
+    setters.setProjectAnalysis(sampleProjectAnalysis)
+    setters.setSpiralNodes(sampleNodes)
+    setters.setFunctionBlocks(sampleFunctionBlocks)
+    setters.setForkSpirals([]) // Placeholder
+    setters.setMapData([]) // Placeholder
+    setters.setIsLoading(false)
+    setters.setIsAnalyzing(false)
+    setters.setActiveView("3d")
+    setters.setSelectedNode(null)
+    setters.setRunningBlock(null)
+    setters.setExpandedBlocks([])
+  }
+
   useEffect(() => {
     try {
       setIsMounted(true)
 
       const generateSampleData = () => {
         const sampleProcesses = [
-          { address: "A1", command: "calculate_sum", category: "math" },
-          { address: "A2", command: "if market_open", category: "control", is_fork: true, fork_type: "if" },
-          { address: "A3", command: "fetch_data", category: "data" },
-          { address: "A4", command: "process_results", category: "data" },
-          { address: "A5", command: "save_output", category: "data" },
-          { address: "A6", command: "for item in list", category: "control", is_fork: true, fork_type: "for" },
-          { address: "A7", command: "validate_input", category: "validation" },
-          { address: "A8", command: "transform_data", category: "data" },
+          {
+            address: "A1",
+            command: "calculate_sum",
+            category: "math",
+            functionName: "add",
+            code: "function add(a, b) {\n  return a + b;\n}",
+          },
+          {
+            address: "A2",
+            command: "if market_open",
+            category: "control",
+            is_fork: true,
+            fork_type: "if",
+            functionName: "checkMarket",
+            code: "function checkMarket() {\n  // Check if market is open\n  return true;\n}",
+          },
+          {
+            address: "A3",
+            command: "fetch_data",
+            category: "data",
+            functionName: "getData",
+            code: "async function getData() {\n  const response = await fetch('/api/data');\n  return await response.json();\n}",
+          },
+          {
+            address: "A4",
+            command: "process_results",
+            category: "data",
+            functionName: "processData",
+            code: "function processData(data) {\n  // Process the fetched data\n  return processed;\n}",
+          },
+          {
+            address: "A5",
+            command: "save_output",
+            category: "data",
+            functionName: "saveOutput",
+            code: "function saveOutput(output) {\n  console.log('Saving:', output);\n}",
+          },
+          {
+            address: "A6",
+            command: "for item in list",
+            category: "control",
+            is_fork: true,
+            fork_type: "for",
+            functionName: "loopItems",
+            code: "function loopItems(list) {\n  list.forEach(item => console.log(item));\n}",
+          },
+          {
+            address: "A7",
+            command: "validate_input",
+            category: "validation",
+            functionName: "validateInput",
+            code: "function validateInput(input) {\n  return input !== null && input !== undefined;\n}",
+          },
+          {
+            address: "A8",
+            command: "transform_data",
+            category: "data",
+            functionName: "transformData",
+            code: "function transformData(data) {\n  // Transform data structure\n  return transformed;\n}",
+          },
         ]
 
         const processedNodes = sampleProcesses.map((process, index) => {
@@ -1716,7 +1538,7 @@ const Page = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black text-white">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white font-mono">
       <header className="border-b border-primary/30 bg-gradient-to-r from-card via-card/90 to-card glass-effect">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -1964,7 +1786,6 @@ const Page = () => {
                       setFunctionBlocks,
                       setInputCode,
                       setLoadedFiles,
-                      setDragActive,
                       setIsMounted,
                       setForkSpirals,
                       setMapData,
@@ -2280,6 +2101,8 @@ const Page = () => {
                     selectedNode={selectedNode}
                     onNodeClick={setSelectedNode}
                     onAddressClick={handleAddressClick}
+                    setSelectedFunctionCode={setSelectedFunctionCode}
+                    setShowCodeModal={setShowCodeModal}
                   />
                   <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
                 </Canvas>
@@ -2292,6 +2115,8 @@ const Page = () => {
                   onNodeClick={setSelectedNode}
                   expandedBlocks={expandedBlocks}
                   runningBlock={runningBlock}
+                  setSelectedFunctionCode={setSelectedFunctionCode}
+                  setShowCodeModal={setShowCodeModal}
                 />
               </div>
             ) : (
@@ -2315,9 +2140,17 @@ const Page = () => {
             executingProcess={null}
             functionBlocks={functionBlocks}
             expandedBlocks={expandedBlocks}
+            setSelectedFunctionCode={setSelectedFunctionCode}
+            setShowCodeModal={setShowCodeModal}
           />
         </div>
       </div>
+
+      <FunctionCodeModal
+        isOpen={showCodeModal}
+        onClose={() => setShowCodeModal(false)}
+        functionData={selectedFunctionCode}
+      />
 
       <footer className="border-t border-primary/30 bg-gradient-to-r from-card via-card/90 to-card glass-effect">
         <div className="container mx-auto px-4 py-4">
