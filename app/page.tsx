@@ -1,13 +1,10 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-
-import { Canvas } from "@react-three/fiber"
-import { OrbitControls } from "@react-three/drei"
+import { useState, useEffect, useRef } from "react"
 import { Html } from "@react-three/drei" // Import Html for 3D labels
+import { Canvas } from "@react-three/fiber"
+import { OrbitControls, PerspectiveCamera } from "@react-three/drei"
 
 interface ProcessNode {
   index: number
@@ -31,6 +28,7 @@ interface ProcessNode {
   address?: string // Added address property
   functionName?: string // Added functionName property
   code?: string // Added code property
+  lines?: string[] // Added lines property
 }
 
 // Define DNAProcess interface based on ProcessNode for clarity
@@ -66,6 +64,7 @@ interface FunctionBlock {
   duplicateReplacements: { [key: string]: string }
   category: string
   description: string
+  efficiency: number // Added efficiency property
 }
 
 interface FileAnalysis {
@@ -121,6 +120,8 @@ interface LibraryFunction {
   usageCount: number
   dateCreated: string
   author: string
+  address?: string // Added address property for library functions
+  project?: string // Added project property for library functions
 }
 
 interface TerminalOutput {
@@ -138,6 +139,221 @@ interface DeveloperProject {
   projectLibrary: LibraryFunction[]
   createdAt: string // Added for project creation timestamp
 }
+
+interface RolodexWindow {
+  id: string
+  title: string
+  type: "editor" | "library" | "terminal" | "visualization" | "chat"
+  component: React.ReactNode
+  isActive: boolean
+}
+
+// Added window state interface for desktop windows
+interface WindowState {
+  id: string
+  title: string
+  type: "editor" | "library" | "terminal" | "visualization" | "chat"
+  x: number
+  y: number
+  width: number
+  height: number
+  isMinimized: boolean
+  zIndex: number
+  isActive: boolean
+}
+
+interface DNAToFileConversion {
+  fileName: string
+  fileType: string
+  content: string
+  dnaAddresses: string[]
+  createdAt: string
+  sourceProject: string
+}
+
+interface FileTransmissionRecord {
+  id: string
+  fileName: string
+  size: number
+  status: "pending" | "sending" | "received" | "failed"
+  timestamp: number
+  recipientAddress?: string
+  sourceAddress?: string
+}
+
+interface ProjectFunctionGroup {
+  projectId: string
+  projectName: string
+  functions: LibraryFunction[]
+}
+
+interface AnimationState {
+  activeAddresses: string[]
+  flowingData: Array<{ from: string; to: string; progress: number }>
+  pulsingNodes: string[]
+}
+
+interface GenomeNode {
+  id: string
+  name: string
+  hierarchicalAddress: string // P.F.O.G format (Program.Function.Order.Global)
+  traits: string[]
+  spawnPoint: boolean
+  parentGenome?: string
+  childGenomes: string[]
+  priority: number
+  workflow: string[]
+  functionalProcesses: string[]
+  dnaAddress: string
+  category: string
+}
+
+interface AIAgent {
+  id: string
+  name: string
+  spawnPoint: GenomeNode
+  inheritedTraits: string[]
+  purpose: string
+  priorities: string[]
+  workflows: string[]
+  activeGenomes: string[]
+  addressLibrary: { [key: string]: string }
+}
+
+interface HierarchicalAddress {
+  program: string // 1st letter of program/repo name
+  function: string // 2nd letter for function/category name
+  order: number // Order in program
+  global: number // Global library number
+  fullAddress: string // Combined format: P.F.O.G
+}
+
+const convertDNAToFile = (
+  functionBlocks: FunctionBlock[],
+  spiralNodes: ProcessNode[],
+  projectName: string,
+  fileType = "js",
+): DNAToFileConversion => {
+  let content = ""
+
+  // Add header comment
+  content += `// Generated from CodeMap DNA Strand\n`
+  content += `// Project: ${projectName}\n`
+  content += `// Generated: ${new Date().toISOString()}\n`
+  content += `// DNA Structure: ${functionBlocks.length} function blocks\n\n`
+
+  // Convert each function block to code
+  functionBlocks.forEach((block) => {
+    content += `// Function Block: ${block.name} (${block.id})\n`
+    content += `// Addresses: ${block.addresses.join(" ")}\n`
+    content += `// Efficiency: ${Math.round((1 - block.optimizedLines.length / block.originalLines.length) * 100)}% reduction\n`
+    content += `function ${block.name.replace(/\s+/g, "_").toLowerCase()}() {\n`
+
+    // Add the actual code lines from the spiral nodes
+    block.addresses.forEach((addr) => {
+      const node = spiralNodes[addr]
+      if (node) {
+        content += `  // Address: ${node.address} (${node.category})\n`
+        if (node.code) {
+          content += `  ${node.code.split("\n").join("\n  ")}\n`
+        } else {
+          content += `  // ${node.command}\n`
+        }
+      }
+    })
+
+    content += `}\n\n`
+  })
+
+  // Add all individual addresses as separate functions
+  content += `// Individual Address Functions\n`
+  spiralNodes.forEach((node) => {
+    if (!functionBlocks.some((b) => b.addresses.includes(node.index))) {
+      content += `function ${node.functionName || `address_${node.address}`}() {\n`
+      if (node.code) {
+        content += `  ${node.code.split("\n").join("\n  ")}\n`
+      } else {
+        content += `  // ${node.command}\n`
+      }
+      content += `}\n\n`
+    }
+  })
+
+  // Add export statements based on file type
+  if (fileType === "ts" || fileType === "tsx") {
+    content += `export default { ...functions };\n`
+  } else if (fileType === "py") {
+    content = content
+      .replace(/function /g, "def ")
+      .replace(/\{/g, ":")
+      .replace(/\}/g, "")
+  }
+
+  return {
+    fileName: `codemap-${projectName.replace(/\s+/g, "-").toLowerCase()}.${fileType}`,
+    fileType,
+    content,
+    dnaAddresses: spiralNodes.map((n) => n.address || ""),
+    createdAt: new Date().toISOString(),
+    sourceProject: projectName,
+  }
+}
+
+const exportDNAAsFile = (conversion: DNAToFileConversion) => {
+  const element = document.createElement("a")
+  const file = new Blob([conversion.content], { type: "text/plain" })
+  element.href = URL.createObjectURL(file)
+  element.download = conversion.fileName
+  document.body.appendChild(element)
+  element.click()
+  document.body.removeChild(element)
+}
+
+const importFileAsDNA = async (file: File): Promise<ProcessNode[]> => {
+  const content = await file.text()
+  const lines = content.split("\n")
+
+  const nodes: ProcessNode[] = []
+  let addressCounter = 1
+
+  lines.forEach((line, index) => {
+    const trimmedLine = line.trim()
+    if (trimmedLine && !trimmedLine.startsWith("//") && trimmedLine.length > 0) {
+      const functionMatch = trimmedLine.match(/function\s+(\w+)/)
+      const functionName = functionMatch ? functionMatch[1] : `imported_${addressCounter}`
+
+      nodes.push({
+        index: nodes.length,
+        coords: [
+          Math.cos((nodes.length / 50) * Math.PI * 5) * 10,
+          25 - nodes.length * 0.5,
+          Math.sin((nodes.length / 50) * Math.PI * 5) * 10,
+        ] as [number, number, number],
+        strand: nodes.length % 2,
+        base: ["A", "T", "C", "G"][nodes.length % 4],
+        complement: ["T", "A", "G", "C"][nodes.length % 4],
+        angle: 0,
+        base_pair_id: `bp-${nodes.length}`,
+        command: trimmedLine,
+        category: "imported",
+        address: `a${addressCounter}`,
+        functionName,
+        code: trimmedLine,
+      })
+      addressCounter++
+    }
+  })
+
+  return nodes
+}
+
+const createTransmissionRecord = (fileName: string, fileSize: number): FileTransmissionRecord => ({
+  id: `trans-${Date.now()}`,
+  fileName,
+  size: fileSize,
+  status: "pending",
+  timestamp: Date.now(),
+})
 
 const COMMAND_LIBRARY = {
   // DNA Address Commands
@@ -243,6 +459,65 @@ const COMMAND_LIBRARY = {
   },
 }
 
+// Added DesktopWindow component for draggable/resizable windows
+const DesktopWindow: React.FC<{
+  window: WindowState
+  onDragStart: (e: React.MouseEvent, windowId: string) => void
+  onResizeStart: (e: React.MouseEvent, windowId: string) => void
+  onClose: (windowId: string) => void
+  onMinimize: (windowId: string) => void
+  onFocus: (windowId: string) => void
+  children: React.ReactNode
+}> = ({ window, onDragStart, onResizeStart, onClose, onMinimize, onFocus, children }) => {
+  return (
+    <div
+      className="absolute bg-gradient-to-br from-card to-card/90 border border-primary/30 rounded-lg shadow-2xl flex flex-col overflow-hidden"
+      style={{
+        left: `${window.x}px`,
+        top: `${window.y}px`,
+        width: `${window.width}px`,
+        height: `${window.height}px`,
+        zIndex: window.zIndex,
+      }}
+      onClick={() => onFocus(window.id)}
+    >
+      {/* Window header */}
+      <div
+        className="bg-gradient-to-r from-primary/20 to-secondary/20 border-b border-primary/30 px-4 py-2 flex items-center justify-between cursor-move hover:from-primary/30 hover:to-secondary/30 transition-colors"
+        onMouseDown={(e) => onDragStart(e, window.id)}
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+          <h3 className="font-semibold text-sm text-white">{window.title}</h3>
+        </div>
+        <div className="flex gap-1">
+          <button
+            onClick={() => onMinimize(window.id)}
+            className="w-6 h-6 flex items-center justify-center hover:bg-yellow-500/30 rounded transition-colors"
+          >
+            -
+          </button>
+          <button
+            onClick={() => onClose(window.id)}
+            className="w-6 h-6 flex items-center justify-center hover:bg-red-500/30 rounded transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Window content */}
+      <div className="flex-1 overflow-auto">{children}</div>
+
+      {/* Resize handle */}
+      <div
+        className="absolute bottom-0 right-0 w-4 h-4 bg-primary/40 hover:bg-primary/60 cursor-se-resize"
+        onMouseDown={(e) => onResizeStart(e, window.id)}
+      ></div>
+    </div>
+  )
+}
+
 function detectFunctionBlocks(processes: ProcessNode[]): FunctionBlock[] {
   const blocks: FunctionBlock[] = []
   let currentBlock: Partial<FunctionBlock> | null = null
@@ -277,6 +552,7 @@ function detectFunctionBlocks(processes: ProcessNode[]): FunctionBlock[] {
           originalLines,
           optimizedLines,
           duplicateReplacements,
+          efficiency: 0, // Placeholder, needs actual calculation
         } as FunctionBlock)
       }
 
@@ -310,6 +586,7 @@ function detectFunctionBlocks(processes: ProcessNode[]): FunctionBlock[] {
           originalLines,
           optimizedLines,
           duplicateReplacements,
+          efficiency: 0, // Placeholder, needs actual calculation
         } as FunctionBlock)
         currentBlock = null
       }
@@ -336,6 +613,7 @@ function detectFunctionBlocks(processes: ProcessNode[]): FunctionBlock[] {
       originalLines,
       optimizedLines,
       duplicateReplacements,
+      efficiency: 0, // Placeholder, needs actual calculation
     } as FunctionBlock)
   }
 
@@ -422,345 +700,296 @@ function detectCodeDuplicates(processes: ProcessNode[]): ProcessNode[] {
   return uniqueProcesses.sort((a, b) => a.index - b.index)
 }
 
-function DNASpiral({
+interface DNASpiralProps {
+  nodes: ProcessNode[]
+  forkSpirals: ForkSpiral[]
+  selectedNode: ProcessNode | null
+  onNodeClick: (node: ProcessNode) => void
+  onAddressClick: (node: ProcessNode, index: number) => void
+  setSelectedFunctionCode: (data: any) => void
+  setShowCodeModal: (show: boolean) => void
+  animationState?: AnimationState
+}
+
+const DNASpiral: React.FC<DNASpiralProps> = ({
   nodes,
-  forkSpirals,
   selectedNode,
   onNodeClick,
-  onAddressClick,
   setSelectedFunctionCode,
   setShowCodeModal,
-}: any) {
-  const helixRadius = 10
-  const pitch = 5
-  const base = 44
+  animationState,
+}) => {
+  const handleNodeClick = (node: ProcessNode) => {
+    onNodeClick(node)
+    if (node.code && node.functionName) {
+      setSelectedFunctionCode({
+        name: node.functionName,
+        code: node.code,
+        address: node.address,
+        lines: node.lines || [],
+      })
+      setShowCodeModal(true)
+    }
+  }
+
+  const strand1: [number, number, number][] = []
+  const strand2: [number, number, number][] = []
+  const basePairs: Array<[[number, number, number], [number, number, number]]> = []
+
+  nodes.forEach((node, i) => {
+    const t = i / Math.max(nodes.length - 1, 1)
+    const angle1 = t * Math.PI * 8 // Main strand
+    const angle2 = angle1 + Math.PI // Opposite strand (180° offset)
+    const radius = 8
+    const height = t * 60 - 30
+
+    const x1 = Math.cos(angle1) * radius
+    const z1 = Math.sin(angle1) * radius
+    const x2 = Math.cos(angle2) * radius
+    const z2 = Math.sin(angle2) * radius
+
+    strand1.push([x1, height, z1])
+    strand2.push([x2, height, z2])
+    basePairs.push([
+      [x1, height, z1],
+      [x2, height, z2],
+    ])
+  })
 
   return (
-    <group>
-      {/* Central axis lines */}
+    <Canvas camera={{ position: [0, 0, 50], fov: 60 }} className="w-full h-full">
+      <PerspectiveCamera makeDefault position={[0, 0, 50]} />
+      <OrbitControls enableDamping dampingFactor={0.05} />
+
+      <ambientLight intensity={0.5} />
+      <pointLight position={[10, 10, 10]} intensity={1} color="#39FF14" />
+      <pointLight position={[-10, -10, -10]} intensity={0.5} color="#00FF00" />
+
       <line>
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
-            count={2}
-            array={new Float32Array([0, 25, 0, 0, -25, 0])}
+            count={strand1.length}
+            array={new Float32Array(strand1.flat())}
             itemSize={3}
           />
         </bufferGeometry>
-        <lineBasicMaterial color="#06b6d4" linewidth={8} />
+        <lineBasicMaterial color="#00FF00" linewidth={3} />
       </line>
 
-      {nodes?.map((node, index) => {
-        const angle = (2 * Math.PI * index) / (base / 2)
-        const height = (index * pitch) / (base / 2)
-        const yPos = 20 - height * 2
+      <line>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={strand2.length}
+            array={new Float32Array(strand2.flat())}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <lineBasicMaterial color="#39FF14" linewidth={3} />
+      </line>
 
-        // Main strand (strand 0)
-        const strand = index % 2
-        const mainXPos = helixRadius * Math.cos(angle)
-        const mainZPos = helixRadius * Math.sin(angle)
+      {basePairs.map((pair, idx) => (
+        <line key={`basepair-${idx}`}>
+          <bufferGeometry>
+            <bufferAttribute
+              attach="attributes-position"
+              count={2}
+              array={new Float32Array([...pair[0], ...pair[1]])}
+              itemSize={3}
+            />
+          </bufferGeometry>
+          <lineBasicMaterial color="#7FFF00" linewidth={1} opacity={0.4} transparent />
+        </line>
+      ))}
 
-        // Complementary strand (strand 1) - 180 degrees offset
-        const compXPos = helixRadius * Math.cos(angle + Math.PI)
-        const compZPos = helixRadius * Math.sin(angle + Math.PI)
+      {nodes.map((node, idx) => {
+        const isActive = animationState?.activeAddresses.includes(node.address || "")
+        const isPulsing = animationState?.pulsingNodes.includes(node.address || "")
+        const position = idx % 2 === 0 ? strand1[Math.floor(idx / 2)] : strand2[Math.floor(idx / 2)]
 
-        const nextIndex = index + 1
-        if (nextIndex < nodes.length) {
-          const nextAngle = (2 * Math.PI * nextIndex) / (base / 2)
-          const nextHeight = (nextIndex * pitch) / (base / 2)
-          const nextYPos = 20 - nextHeight * 2
-
-          const nextMainXPos = helixRadius * Math.cos(nextAngle)
-          const nextMainZPos = helixRadius * Math.sin(nextAngle)
-          const nextCompXPos = helixRadius * Math.cos(nextAngle + Math.PI)
-          const nextCompZPos = helixRadius * Math.sin(nextAngle + Math.PI)
-
-          return (
-            <group key={`dna-helix-${index}`}>
-              {/* Main strand connection */}
-              <line>
-                <bufferGeometry>
-                  <bufferAttribute
-                    attach="attributes-position"
-                    count={2}
-                    array={new Float32Array([mainXPos, yPos, mainZPos, nextMainXPos, nextYPos, nextMainZPos])}
-                    itemSize={3}
-                  />
-                </bufferGeometry>
-                <lineBasicMaterial color="#06b6d4" linewidth={4} />
-              </line>
-
-              {/* Complementary strand connection */}
-              <line>
-                <bufferGeometry>
-                  <bufferAttribute
-                    attach="attributes-position"
-                    count={2}
-                    array={new Float32Array([compXPos, yPos, compZPos, nextCompXPos, nextYPos, nextCompZPos])}
-                    itemSize={3}
-                  />
-                </bufferGeometry>
-                <lineBasicMaterial color="#22d3ee" linewidth={3} />
-              </line>
-
-              {/* Base pair connections (every 3rd pair for clarity) */}
-              {index % 3 === 0 && (
-                <line>
-                  <bufferGeometry>
-                    <bufferAttribute
-                      attach="attributes-position"
-                      count={2}
-                      array={new Float32Array([mainXPos, yPos, mainZPos, compXPos, yPos, compZPos])}
-                      itemSize={3}
-                    />
-                  </bufferGeometry>
-                  <lineBasicMaterial color="#ffffff" linewidth={1} transparent opacity={0.4} />
-                </line>
-              )}
-
-              <group>
-                <mesh
-                  position={[mainXPos, yPos, mainZPos]}
-                  onClick={() => {
-                    onAddressClick?.(node.address)
-                    setSelectedFunctionCode({
-                      name: node.functionName || `Function ${index + 1}`,
-                      address: node.address,
-                      code:
-                        node.code ||
-                        `// Function code for ${node.functionName || `Function ${index + 1}`}\nfunction ${node.functionName || `func${index + 1}`}() {\n  // Implementation here\n  return result;\n}`,
-                      category: node.category || "general",
-                    })
-                    setShowCodeModal(true)
-                  }}
-                >
-                  <sphereGeometry args={[0.5]} />
-                  <meshBasicMaterial
-                    color={selectedNode?.index === index ? "#ffffff" : "#06b6d4"}
-                    transparent
-                    opacity={0.9}
-                  />
-                </mesh>
-
-                <Html position={[mainXPos, yPos + 1.5, mainZPos]} center>
-                  <div className="text-xs text-cyan-300 font-mono bg-black/50 px-1 py-0.5 rounded border border-cyan-500/30 whitespace-nowrap">
-                    {node.functionName || `func${index + 1}`}
-                  </div>
-                </Html>
-              </group>
-
-              {/* Subprocess nodes */}
-              <mesh position={[compXPos, yPos, compZPos]}>
-                <sphereGeometry args={[0.3]} />
-                <meshBasicMaterial color="#22d3ee" transparent opacity={0.7} />
-              </mesh>
-            </group>
-          )
-        }
-
-        return null
-      })}
-
-      {/* Pipeline flow animation */}
-      {Array.from({ length: 20 }, (_, i) => {
-        const yPos = 22 - i * 2.2
-        const time = Date.now() * 0.002
-        const angle = time + i * 0.3
-        const radius = 2 + Math.sin(time + i * 0.5) * 0.5
-        const xOffset = radius * Math.cos(angle)
-        const zOffset = radius * Math.sin(angle)
+        if (!position) return null
 
         return (
-          <mesh key={`pipeline-flow-${i}`} position={[xOffset, yPos, zOffset]}>
-            <sphereGeometry args={[0.2]} />
-            <meshBasicMaterial color="#22d3ee" transparent opacity={0.8 - i * 0.03} />
-          </mesh>
+          <group key={`node-${idx}`} position={position}>
+            <mesh onClick={() => handleNodeClick(node)}>
+              <sphereGeometry args={[isPulsing ? 0.6 : 0.4, 32, 32]} />
+              <meshStandardMaterial
+                color={isActive ? "#39FF14" : node === selectedNode ? "#00FF00" : "#7FFF00"}
+                emissive={isActive ? "#ADFF2F" : node === selectedNode ? "#39FF14" : "#00FF00"}
+                emissiveIntensity={isActive ? 1.2 : 0.6}
+              />
+            </mesh>
+            <Html position={[0, 0.8, 0]} center>
+              <div className="text-xs text-green-400 font-bold whitespace-nowrap pointer-events-none drop-shadow-lg">
+                {node.functionName || node.address}
+              </div>
+            </Html>
+          </group>
         )
       })}
-    </group>
+
+      {animationState?.flowingData.map((flow, idx) => (
+        <mesh key={`flow-${idx}`} position={[0, -30 + flow.progress * 20, 0]}>
+          <sphereGeometry args={[0.3, 16, 16]} />
+          <meshStandardMaterial color="#39FF14" emissive="#39FF14" emissiveIntensity={2} />
+        </mesh>
+      ))}
+    </Canvas>
   )
 }
 
-function BirdsEyeView({
+interface BirdsEyeViewProps {
+  nodes: ProcessNode[]
+  selectedNode: ProcessNode | null
+  onNodeClick: (node: ProcessNode) => void
+  expandedBlocks?: string[]
+  runningBlock?: FunctionBlock | null
+  executingProcess?: ProcessNode | null
+  functionBlocks?: FunctionBlock[]
+  setSelectedFunctionCode: (data: any) => void
+  setShowCodeModal: (show: boolean) => void
+}
+
+const BirdsEyeView: React.FC<BirdsEyeViewProps> = ({
   nodes,
   selectedNode,
-  executingProcess,
-  functionBlocks,
-  expandedBlocks,
+  onNodeClick,
   setSelectedFunctionCode,
   setShowCodeModal,
-}: any) {
-  const safeNodes = nodes || []
-  const safeFunctionBlocks = functionBlocks || []
-  const safeExpandedBlocks = expandedBlocks || []
+  expandedBlocks,
+  runningBlock,
+}) => {
+  if (!nodes || nodes.length === 0) return null
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-black relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-radial from-cyan-500/10 via-transparent to-transparent animate-pulse"></div>
-
-      <div className="absolute inset-0 opacity-20">
-        <svg width="100%" height="100%" className="absolute inset-0">
-          <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#06b6d4" strokeWidth="0.5" opacity="0.3" />
-            </pattern>
-          </defs>
-          <rect width="100%" height="100%" fill="url(#grid)" />
-        </svg>
-      </div>
-
-      <svg width="100%" height="100%" viewBox="0 0 400 400" className="absolute inset-0">
-        <circle
-          cx="200"
-          cy="200"
-          r="120"
-          fill="none"
-          stroke="#06b6d4"
-          strokeWidth="3"
-          opacity="0.6"
-          className="animate-pulse"
-        />
-        <circle cx="200" cy="200" r="80" fill="none" stroke="#22d3ee" strokeWidth="2" opacity="0.4" />
-        <circle cx="200" cy="200" r="40" fill="none" stroke="#06b6d4" strokeWidth="1" opacity="0.3" />
-
-        {safeFunctionBlocks.map((block: FunctionBlock, blockIndex: number) => {
-          const isExpanded = safeExpandedBlocks.includes(block.id)
-          const spiralRadius = 60 + blockIndex * 25
-          const spiralAngle = (blockIndex * Math.PI * 2) / Math.max(safeFunctionBlocks.length, 1)
-          const centerX = 200 + spiralRadius * Math.cos(spiralAngle)
-          const centerY = 200 + spiralRadius * Math.sin(spiralAngle)
-
-          return (
-            <g key={block.id}>
-              <circle
-                cx={centerX}
-                cy={centerY}
-                r={isExpanded ? 45 : 30}
-                fill="none"
-                stroke={isExpanded ? "#06b6d4" : "#22d3ee"}
-                strokeWidth={isExpanded ? 3 : 2}
-                strokeDasharray={isExpanded ? "8,4" : "4,2"}
-                className={isExpanded ? "animate-pulse" : ""}
-                filter="url(#glow)"
-              />
-
-              {(block.addresses || []).map((addressIndex, i) => {
-                const node = safeNodes[addressIndex]
-                if (!node) return null
-
-                // Better spiral positioning within cluster
-                const nodeAngle = (i / block.addresses.length) * Math.PI * 2
-                const nodeRadius = isExpanded ? 35 : 20
-                const nodeX = centerX + nodeRadius * Math.cos(nodeAngle)
-                const nodeY = centerY + nodeRadius * Math.sin(nodeAngle)
-
-                return (
-                  <g key={`address-${addressIndex}`}>
-                    <circle
-                      cx={nodeX}
-                      cy={nodeY}
-                      r={selectedNode?.index === addressIndex ? 8 : 6}
-                      fill={
-                        executingProcess?.index === addressIndex
-                          ? "#ffffff"
-                          : selectedNode?.index === addressIndex
-                            ? "#06b6d4"
-                            : node.isDuplicate
-                              ? "#dc2626"
-                              : "#22d3ee"
-                      }
-                      className={executingProcess?.index === addressIndex ? "animate-pulse" : ""}
-                      filter="url(#glow)"
-                      onClick={() => {
-                        setSelectedFunctionCode({
-                          name: node.functionName || `Function ${addressIndex + 1}`,
-                          address: node.address,
-                          code:
-                            node.code ||
-                            `// Function code for ${node.functionName || `Function ${addressIndex + 1}`}\nfunction ${node.functionName || `func${addressIndex + 1}`}() {\n  // Implementation here\n  return result;\n}`,
-                          category: node.category || "general",
-                        })
-                        setShowCodeModal(true)
-                      }}
-                      style={{ cursor: "pointer" }}
-                    />
-
-                    <text
-                      x={nodeX}
-                      y={nodeY - 12}
-                      textAnchor="middle"
-                      className="text-xs fill-cyan-300 font-mono font-bold"
-                      filter="url(#textGlow)"
-                    >
-                      {node.functionName || `F${addressIndex + 1}`}
-                    </text>
-                  </g>
-                )
-              })}
-
-              <text
-                x={centerX}
-                y={centerY + (isExpanded ? 55 : 40)}
-                textAnchor="middle"
-                className="text-sm fill-white font-mono font-bold"
-                filter="url(#textGlow)"
-              >
-                {block.name}
-              </text>
-            </g>
-          )
-        })}
-
+    <div className="w-full h-full relative bg-gradient-to-br from-black via-gray-950 to-black cyber-grid overflow-hidden">
+      <svg className="w-full h-full" viewBox="0 0 800 600">
         <defs>
+          <radialGradient id="spiralDisk" cx="50%" cy="50%">
+            <stop offset="0%" stopColor="#00FF00" stopOpacity="0.4" />
+            <stop offset="50%" stopColor="#7FFF00" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+          </radialGradient>
           <filter id="glow">
-            <feGaussianBlur stdDeviation="4" result="coloredBlur" />
-            <feMerge>
-              <feMergeNode in="coloredBlur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="textGlow">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+            <feGaussianBlur stdDeviation="2" result="coloredBlur" />
             <feMerge>
               <feMergeNode in="coloredBlur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
         </defs>
+
+        {/* Central disk */}
+        <circle cx="400" cy="300" r="200" fill="url(#spiralDisk)" filter="url(#glow)" />
+
+        {/* Spiral disk rings */}
+        {[1, 2, 3, 4, 5].map((ring) => (
+          <circle
+            key={`ring-${ring}`}
+            cx="400"
+            cy="300"
+            r={ring * 40}
+            fill="none"
+            stroke="#7FFF00"
+            strokeWidth="0.5"
+            opacity={0.3}
+          />
+        ))}
+
+        {/* Nodes positioned in spiral disk */}
+        {nodes.map((node, idx) => {
+          const totalNodes = nodes.length
+          const angle = (idx / Math.max(totalNodes, 1)) * Math.PI * 6 // Multiple rotations
+          const radius = 40 + (idx / Math.max(totalNodes, 1)) * 160
+          const x = 400 + Math.cos(angle) * radius
+          const y = 300 + Math.sin(angle) * radius
+
+          return (
+            <g key={`2d-node-${idx}`}>
+              {/* Connection line to center */}
+              <line x1={x} y1={y} x2="400" y2="300" stroke="#7FFF00" strokeWidth="0.5" opacity="0.2" />
+
+              {/* Node with glow */}
+              <circle
+                cx={x}
+                cy={y}
+                r="6"
+                fill={node === selectedNode ? "#39FF14" : "#00FF00"}
+                opacity="0.9"
+                filter="url(#glow)"
+                onClick={() => {
+                  onNodeClick(node)
+                  if (node.code && node.functionName) {
+                    setSelectedFunctionCode({
+                      name: node.functionName,
+                      code: node.code,
+                      address: node.address,
+                    })
+                    setShowCodeModal(true)
+                  }
+                }}
+                className="cursor-pointer hover:opacity-100 transition-opacity"
+              />
+
+              {/* Label */}
+              <text
+                x={x}
+                y={y - 12}
+                textAnchor="middle"
+                className="text-xs fill-green-400 font-bold pointer-events-none"
+                fontSize="10"
+              >
+                {node.address}
+              </text>
+            </g>
+          )
+        })}
+
+        {/* Center point */}
+        <circle cx="400" cy="300" r="8" fill="#00FF00" opacity="0.6" filter="url(#glow)" />
       </svg>
     </div>
   )
 }
 
-const FunctionCodeModal = ({ isOpen, onClose, functionData }: any) => {
-  if (!isOpen || !functionData) return null
+interface FunctionCodeModalProps {
+  isOpen: boolean
+  onClose: () => void
+  functionData: any
+}
+
+const FunctionCodeModal: React.FC<FunctionCodeModalProps> = ({ isOpen, onClose, functionData }) => {
+  if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-cyan-500/30 rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-cyan-500/30">
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+      <div className="bg-gradient-to-br from-card to-card/90 border border-primary/30 rounded-lg p-6 max-w-2xl w-full max-h-96 overflow-auto">
+        <div className="flex justify-between items-start mb-4">
           <div>
-            <h3 className="text-lg font-mono font-bold text-cyan-300">{functionData.name}</h3>
-            <p className="text-sm text-cyan-500">Address: {functionData.address}</p>
+            <h2 className="text-xl font-bold text-primary">{functionData?.name}</h2>
+            <p className="text-sm text-muted-foreground">Address: {functionData?.address}</p>
           </div>
-          <button onClick={onClose} className="text-cyan-300 hover:text-white transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <button onClick={onClose} className="text-muted-foreground hover:text-primary transition-colors">
+            ✕
           </button>
         </div>
-        <div className="p-4 overflow-auto max-h-[60vh]">
-          <pre className="text-sm text-cyan-100 font-mono bg-black/50 p-4 rounded border border-cyan-500/20 overflow-x-auto">
-            <code>{functionData.code}</code>
-          </pre>
-        </div>
+        <pre className="bg-black/50 p-4 rounded border border-primary/20 text-sm text-primary font-mono overflow-auto">
+          {functionData?.code}
+        </pre>
       </div>
     </div>
   )
 }
 
-const Page = () => {
+// Moved state declarations here as they were outside the component scope in the updates.
+export default function Page() {
   const [isMounted, setIsMounted] = useState(false)
+  const [showFileTree, setShowFileTree] = useState(false)
+  const [showScriptConverter, setShowScriptConverter] = useState(false)
+  const [scriptInput, setScriptInput] = useState("")
+  const [convertedOutput, setConvertedOutput] = useState("")
+
   const [showFileLoader, setShowFileLoader] = useState(false)
   const [activeView, setActiveView] = useState("3d")
   const [dragActive, setDragActive] = useState(false)
@@ -770,870 +999,1012 @@ const Page = () => {
   const [spiralNodes, setSpiralNodes] = useState<ProcessNode[]>([])
   const [functionBlocks, setFunctionBlocks] = useState<FunctionBlock[]>([])
   const [forkSpirals, setForkSpirals] = useState<ForkSpiral[]>([])
-  const [mapData, setMapData] = useState<MapData[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [selectedNode, setSelectedNode] = useState<ProcessNode | null>(null)
-  const [currentExecutingLine, setCurrentExecutingLine] = useState<number | null>(null)
-  const [runningBlock, setRunningBlock] = useState<FunctionBlock | null>(null)
-  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([])
-  const [inputCode, setInputCode] = useState("")
-
-  const [showCodeModal, setShowCodeModal] = useState(false)
-  const [selectedFunctionCode, setSelectedFunctionCode] = useState<any>(null)
-
   const [addressRegistry, setAddressRegistry] = useState<AddressRegistry>({})
   const [pipelineCalls, setPipelineCalls] = useState<PipelineCall[]>([])
-  const [activeSummons, setActiveSummons] = useState<string[]>([])
-
-  const [hasError, setHasError] = useState(false)
-
-  const [functionLibrary, setFunctionLibrary] = useState<LibraryFunction[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
-  const [filteredFunctions, setFilteredFunctions] = useState<LibraryFunction[]>([])
   const [terminalOutput, setTerminalOutput] = useState<TerminalOutput[]>([])
   const [terminalInput, setTerminalInput] = useState("")
+  const [functionLibrary, setFunctionLibrary] = useState<LibraryFunction[]>([])
   const [currentProject, setCurrentProject] = useState<DeveloperProject | null>(null)
-  const [showTerminal, setShowTerminal] = useState(false)
-  const [showLibrary, setShowLibrary] = useState(false)
-  const [selectedFunction, setSelectedFunction] = useState<LibraryFunction | null>(null)
+  const [projects, setProjects] = useState<DeveloperProject[]>([])
+  const [isMobile, setIsMobile] = useState(false)
+  const [activeWindowIndex, setActiveWindowIndex] = useState(0)
+  const [windows, setWindows] = useState<WindowState[]>([])
+  const [conversions, setConversions] = useState<DNAToFileConversion[]>([])
+  const [transmissions, setTransmissions] = useState<FileTransmissionRecord[]>([])
+  const [selectedFunctionCode, setSelectedFunctionCode] = useState<any>(null)
+  const [showCodeModal, setShowCodeModal] = useState(false)
+  const [animationState, setAnimationState] = useState<AnimationState>({
+    activeAddresses: [],
+    flowingData: [],
+    pulsingNodes: [],
+  })
+  const [libraryView, setLibraryView] = useState<"list" | "pulldown">("list")
+  const [librarySortBy, setLibrarySortBy] = useState<"alphabetic" | "project">("project")
+  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([])
+  const [runningBlock, setRunningBlock] = useState<FunctionBlock | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  const handleAddressClick = (node: ProcessNode, index: number) => {
-    setSelectedNode(node)
-    setCurrentExecutingLine(index)
+  const [genomeTree, setGenomeTree] = useState<GenomeNode[]>([])
+  const [aiAgents, setAIAgents] = useState<AIAgent[]>([])
+  const [showGenomeView, setShowGenomeView] = useState(false)
+  const [selectedGenome, setSelectedGenome] = useState<GenomeNode | null>(null)
+  const [showAIChat, setShowAIChat] = useState(false)
+  const [aiChatMessages, setAIChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([])
+  const [aiChatInput, setAIChatInput] = useState("")
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    setLoadedFiles(files)
+    addTerminalOutput(`Loaded ${files.length} files`, "system")
+
+    try {
+      const allNodesArrays = await Promise.all(files.map((file) => importFileAsDNA(file)))
+      const allNodes = allNodesArrays.flat()
+      setSpiralNodes(allNodes)
+      const blocks = detectFunctionBlocks(allNodes)
+      setFunctionBlocks(blocks)
+      buildAddressRegistry(allNodes)
+      addTerminalOutput(`Processed ${allNodes.length} code addresses from ${files.length} files`, "system")
+    } catch (error: any) {
+      addTerminalOutput(`Error processing files: ${error.message}`, "error")
+    }
+  }
+
+  const addFunctionToBuild = (func: any) => {
+    // Create new address nodes for this function
+    const newNodes = func.addresses.map((addr: string, idx: number) => ({
+      id: `${spiralNodes.length + idx + 1}`,
+      address: addr,
+      content: func.code || `function ${func.name}() { /* ${addr} */ }`,
+      functionName: func.name,
+      projectName: currentProject || "Current Build",
+    }))
+
+    setSpiralNodes([...spiralNodes, ...newNodes])
+    const updatedBlocks = detectFunctionBlocks([...spiralNodes, ...newNodes])
+    setFunctionBlocks(updatedBlocks)
+    buildAddressRegistry([...spiralNodes, ...newNodes])
+
+    addTerminalOutput(`Added function "${func.name}" to build (${func.addresses.length} addresses)`, "system")
+  }
+
+  const convertScriptToLibrary = (script: string) => {
+    const lines = script.split("\n")
+    const functions: LibraryFunction[] = []
+    let currentFunction = ""
+    let functionName = ""
+
+    lines.forEach((line) => {
+      const functionMatch = line.match(/function\s+(\w+)/)
+      if (functionMatch) {
+        if (currentFunction && functionName) {
+          functions.push({
+            id: `lib-${Date.now()}-${Math.random()}`,
+            name: functionName,
+            dnaAddress: `LIB${functions.length + 1}`, // Use dnaAddress for library functions
+            code: currentFunction.trim(),
+            parameters: [], // Placeholder
+            returnType: "any", // Placeholder
+            category: "converted",
+            tags: [], // Placeholder
+            usageCount: 0,
+            dateCreated: new Date().toISOString(),
+            author: "CodeMap",
+            project: currentProject?.name || "default",
+          })
+        }
+        functionName = functionMatch[1]
+        currentFunction = line + "\n"
+      } else {
+        currentFunction += line + "\n"
+      }
+    })
+
+    // Add the last function if it exists
+    if (currentFunction && functionName) {
+      functions.push({
+        id: `lib-${Date.now()}-${Math.random()}`,
+        name: functionName,
+        dnaAddress: `LIB${functions.length + 1}`,
+        code: currentFunction.trim(),
+        parameters: [],
+        returnType: "any",
+        category: "converted",
+        tags: [],
+        usageCount: 0,
+        dateCreated: new Date().toISOString(),
+        author: "CodeMap",
+        project: currentProject?.name || "default",
+      })
+    }
+
+    setFunctionLibrary((prev) => [...prev, ...functions])
+    addTerminalOutput(`Converted ${functions.length} functions to library`, "system")
+    return functions
+  }
+
+  const convertLibraryToScript = (libraryFunctions: LibraryFunction[]) => {
+    const script = libraryFunctions.map((fn) => fn.code).join("\n\n")
+    setConvertedOutput(script)
+    addTerminalOutput(`Generated script from ${libraryFunctions.length} library functions`, "system")
+    return script
+  }
+
+  const generateHierarchicalAddress = (
+    programName: string,
+    functionName: string,
+    orderInProgram: number,
+    globalIndex: number,
+    existingAddresses: Set<string>,
+  ): HierarchicalAddress => {
+    // Get first letter of program name, find next available if taken
+    let programLetter = programName.charAt(0).toUpperCase()
+    let letterIndex = 0
+    while (existingAddresses.has(programLetter) && letterIndex < programName.length) {
+      letterIndex++
+      programLetter = programName.charAt(letterIndex).toUpperCase()
+    }
+
+    // Get first letter of function/category name
+    const functionLetter = functionName.charAt(0).toLowerCase()
+
+    const fullAddress = `${programLetter}.${functionLetter}.${orderInProgram}.${globalIndex}`
+    return {
+      program: programLetter,
+      function: functionLetter,
+      order: orderInProgram,
+      global: globalIndex,
+      fullAddress,
+    }
+  }
+
+  const createGenomeNode = (
+    func: LibraryFunction,
+    programName: string,
+    orderInProgram: number,
+    globalIndex: number,
+    existingAddresses: Set<string>,
+  ): GenomeNode => {
+    const address = generateHierarchicalAddress(programName, func.name, orderInProgram, globalIndex, existingAddresses)
+
+    return {
+      id: `genome-${globalIndex}`,
+      name: func.name,
+      hierarchicalAddress: address.fullAddress,
+      traits: func.tags || [],
+      spawnPoint: func.category === "core" || func.usageCount > 10,
+      parentGenome: undefined,
+      childGenomes: [],
+      priority: func.usageCount,
+      workflow: [func.description],
+      functionalProcesses: [func.code],
+      dnaAddress: func.dnaAddress,
+      category: func.category,
+    }
+  }
+
+  const buildGenomeTree = () => {
+    const tree: GenomeNode[] = []
+    const addressSet = new Set<string>()
+    let globalIndex = 1
+
+    // Group functions by project (program)
+    const projectGroups = functionLibrary.reduce(
+      (acc, func) => {
+        const project = func.project || "default"
+        if (!acc[project]) acc[project] = []
+        acc[project].push(func)
+        return acc
+      },
+      {} as { [key: string]: LibraryFunction[] },
+    )
+
+    // Create genome nodes for each function
+    Object.entries(projectGroups).forEach(([projectName, functions]) => {
+      functions.forEach((func, orderIndex) => {
+        const genomeNode = createGenomeNode(func, projectName, orderIndex + 1, globalIndex, addressSet)
+        addressSet.add(genomeNode.hierarchicalAddress)
+        tree.push(genomeNode)
+        globalIndex++
+      })
+    })
+
+    // Establish parent-child relationships based on dependencies
+    tree.forEach((node) => {
+      const relatedNodes = tree.filter((n) => n.traits.some((trait) => node.traits.includes(trait)) && n.id !== node.id)
+      node.childGenomes = relatedNodes.map((n) => n.id)
+      relatedNodes.forEach((related) => {
+        if (!related.parentGenome) related.parentGenome = node.id
+      })
+    })
+
+    setGenomeTree(tree)
+    addTerminalOutput(`Built genome tree with ${tree.length} nodes`, "system")
+    return tree
+  }
+
+  const spawnAIAgent = (spawnGenome: GenomeNode, purpose: string): AIAgent => {
+    // Collect inherited traits from parent genome lineage
+    const inheritedTraits: string[] = [...spawnGenome.traits]
+    let currentGenome: GenomeNode | undefined = spawnGenome
+
+    while (currentGenome?.parentGenome) {
+      const parent = genomeTree.find((g) => g.id === currentGenome!.parentGenome)
+      if (parent) {
+        inheritedTraits.push(...parent.traits.filter((t) => !inheritedTraits.includes(t)))
+        currentGenome = parent
+      } else {
+        break
+      }
+    }
+
+    // Build address library from genome tree
+    const addressLibrary: { [key: string]: string } = {}
+    genomeTree.forEach((genome) => {
+      addressLibrary[genome.hierarchicalAddress] = genome.name
+    })
+
+    const agent: AIAgent = {
+      id: `agent-${Date.now()}`,
+      name: `${spawnGenome.name}Agent`,
+      spawnPoint: spawnGenome,
+      inheritedTraits,
+      purpose,
+      priorities: spawnGenome.workflow,
+      workflows: spawnGenome.functionalProcesses,
+      activeGenomes: [spawnGenome.id, ...spawnGenome.childGenomes],
+      addressLibrary,
+    }
+
+    setAIAgents((prev) => [...prev, agent])
+    addTerminalOutput(`Spawned AI agent "${agent.name}" from genome ${spawnGenome.hierarchicalAddress}`, "system")
+    return agent
+  }
+
+  const aiDecisionMaking = async (agent: AIAgent, query: string): Promise<string> => {
+    addTerminalOutput(`AI Agent "${agent.name}" processing query...`, "system")
+
+    // Find relevant genome nodes based on query
+    const relevantGenomes = genomeTree.filter(
+      (genome) =>
+        genome.traits.some((trait) => query.toLowerCase().includes(trait.toLowerCase())) ||
+        genome.name.toLowerCase().includes(query.toLowerCase()),
+    )
+
+    if (relevantGenomes.length === 0) {
+      return "No relevant functions found in genome library."
+    }
+
+    // Build execution plan using hierarchical addresses
+    const executionPlan = relevantGenomes
+      .map((genome) => ({
+        address: genome.hierarchicalAddress,
+        function: genome.name,
+        priority: genome.priority,
+      }))
+      .sort((a, b) => b.priority - a.priority)
+
+    // Simulate AI calling functions by address
+    addTerminalOutput(`AI executing plan with ${executionPlan.length} functions:`, "system")
+    executionPlan.forEach((step) => {
+      addTerminalOutput(`  → Calling ${step.address}: ${step.function}`, "output")
+    })
+
+    return `Executed ${executionPlan.length} functions from genome library: ${executionPlan.map((s) => s.address).join(", ")}`
+  }
+
+  const handleGenomeCommands = (command: string) => {
+    const lowerCommand = command.toLowerCase().trim()
+
+    if (lowerCommand === "genome") {
+      buildGenomeTree()
+      setShowGenomeView(true)
+      return true
+    }
+
+    if (lowerCommand.startsWith("spawn ")) {
+      const genomeName = command.substring(6).trim()
+      const genome = genomeTree.find((g) => g.name.toLowerCase().includes(genomeName.toLowerCase()))
+      if (genome) {
+        spawnAIAgent(genome, `Agent for ${genome.name}`)
+      } else {
+        addTerminalOutput(`Genome "${genomeName}" not found`, "error")
+      }
+      return true
+    }
+
+    if (lowerCommand.startsWith("ai ")) {
+      const query = command.substring(3).trim()
+      if (aiAgents.length === 0) {
+        addTerminalOutput('No AI agents available. Use "spawn <genome>" to create one.', "error")
+      } else {
+        aiDecisionMaking(aiAgents[0], query)
+      }
+      return true
+    }
+
+    if (lowerCommand === "agents") {
+      if (aiAgents.length === 0) {
+        addTerminalOutput("No AI agents spawned", "output")
+      } else {
+        aiAgents.forEach((agent) => {
+          addTerminalOutput(`Agent: ${agent.name} (Spawn: ${agent.spawnPoint.hierarchicalAddress})`, "output")
+          addTerminalOutput(`  Traits: ${agent.inheritedTraits.join(", ")}`, "output")
+          addTerminalOutput(`  Purpose: ${agent.purpose}`, "output")
+        })
+      }
+      return true
+    }
+
+    return false
+  }
+
+  useEffect(() => {
+    setIsMounted(true)
+    generateSampleData()
+
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
+
+  const generateSampleData = () => {
+    const sampleNodes: ProcessNode[] = Array.from({ length: 20 }, (_, i) => ({
+      index: i,
+      coords: [0, 0, 0] as [number, number, number],
+      strand: i % 2,
+      base: ["A", "T", "C", "G"][i % 4],
+      complement: ["T", "A", "G", "C"][i % 4],
+      angle: 0,
+      base_pair_id: `bp-${i}`,
+      command: `function_${i + 1}()`,
+      category: ["function", "data", "logic", "api"][i % 4],
+      address: `a${i + 1}`,
+      functionName: `Function${i + 1}`,
+      code: `// Function ${i + 1} implementation\nreturn data_${i + 1}`,
+      lines: [`// Function ${i + 1} implementation`, `return data_${i + 1}`], // Add lines property
+    }))
+
+    setSpiralNodes(sampleNodes)
+    setFunctionBlocks(detectFunctionBlocks(sampleNodes))
+    buildAddressRegistry(sampleNodes)
+    setIsLoading(false) // Set loading to false after sample data is generated
+  }
+
+  const buildAddressRegistry = (nodes: ProcessNode[]) => {
+    const registry: AddressRegistry = {}
+    nodes.forEach((node, index) => {
+      if (node.address) {
+        registry[node.address] = {
+          node,
+          index,
+          dependencies: [],
+          executionFunction: async () => {
+            console.log(`[v0] Executing ${node.address}: ${node.command}`)
+            // Simulate some async operation
+            await new Promise((resolve) => setTimeout(resolve, 50))
+            addTerminalOutput(`Executed ${node.address}`, "output")
+            return { success: true, result: `Executed ${node.address}` }
+          },
+        }
+      }
+    })
+    setAddressRegistry(registry)
   }
 
   const summonAddress = async (addressId: string) => {
     const registryEntry = addressRegistry[addressId]
     if (!registryEntry) {
-      console.error(`[v0] Address ${addressId} not found in registry`)
-      addTerminalOutput("error", `Address ${addressId} not found in registry`)
-      return null
-    }
-
-    // Show summon activity in terminal
-    addTerminalOutput("system", `🔮 Summoning address ${addressId}...`)
-
-    // Create pipeline call record
-    const call: PipelineCall = {
-      addressId,
-      timestamp: Date.now(),
-      status: "summoning",
-      dependencies: registryEntry.dependencies,
-    }
-
-    setPipelineCalls((prev) => [...prev, call])
-    setActiveSummons((prev) => [...prev, addressId])
-
-    try {
-      // Update call status
-      setPipelineCalls((prev) => prev.map((c) => (c.timestamp === call.timestamp ? { ...c, status: "executing" } : c)))
-      addTerminalOutput("system", `⚡ Executing ${addressId}: ${registryEntry.node.command}`)
-
-      // Execute the summoned address
-      const result = await registryEntry.executionFunction()
-
-      // Mark as completed
-      setPipelineCalls((prev) => prev.map((c) => (c.timestamp === call.timestamp ? { ...c, status: "completed" } : c)))
-      addTerminalOutput("output", `✅ ${addressId} completed: ${JSON.stringify(result, null, 2)}`)
-
-      return result
-    } catch (error) {
-      // Mark as failed
-      setPipelineCalls((prev) => prev.map((c) => (c.timestamp === call.timestamp ? { ...c, status: "failed" } : c)))
-      console.error(`[v0] Failed to execute ${addressId}:`, error)
-      addTerminalOutput("error", `❌ ${addressId} failed: ${error}`)
-      return null
-    } finally {
-      setActiveSummons((prev) => prev.filter((addr) => addr !== addressId))
-    }
-  }
-
-  const buildAddressRegistry = (processes: ProcessNode[]) => {
-    const registry: AddressRegistry = {}
-
-    processes.forEach((node, index) => {
-      const addressId = `a${index + 1}`
-
-      // Determine dependencies by analyzing the command
-      const dependencies: string[] = []
-      if (node.command) {
-        // Look for address references in the command (like calling other functions)
-        const addressMatches = node.command.match(/a\d+/g)
-        if (addressMatches) {
-          dependencies.push(...addressMatches.filter((addr) => addr !== addressId))
-        }
-      }
-
-      // Create execution function for this address
-      const executionFunction = async () => {
-        console.log(`[v0] Executing ${addressId}: ${node.command}`)
-        setCurrentExecutingLine(index)
-
-        // Simulate execution time based on command complexity
-        const executionTime = node.command?.length ? Math.min(node.command.length * 10, 2000) : 500
-        await new Promise((resolve) => setTimeout(resolve, executionTime))
-
-        setCurrentExecutingLine(null)
-        return { addressId, result: `Executed: ${node.command}`, timestamp: Date.now() }
-      }
-
-      registry[addressId] = {
-        node,
-        index,
-        dependencies,
-        executionFunction,
-      }
-    })
-
-    setAddressRegistry(registry)
-    return registry
-  }
-
-  const runFromHere = async (startIndex: number) => {
-    const addressId = `a${startIndex + 1}`
-    const blockToRun = functionBlocks.find((block) => block.startAddress === startIndex)
-
-    if (blockToRun) {
-      setRunningBlock(blockToRun)
-
-      // Summon all addresses in the block sequentially
-      for (const addr of blockToRun.optimizedLines) {
-        await summonAddress(addr)
-        // Small delay between summons for visual effect
-        await new Promise((resolve) => setTimeout(resolve, 200))
-      }
-
-      setRunningBlock(null)
-    } else {
-      // Summon single address
-      await summonAddress(addressId)
-    }
-  }
-
-  const addToLibrary = (functionCode: string, name: string, description: string, category: string) => {
-    const newFunction: LibraryFunction = {
-      id: `lib-${Date.now()}`,
-      name,
-      description,
-      code: functionCode,
-      parameters: extractParameters(functionCode),
-      returnType: extractReturnType(functionCode),
-      tags: extractTags(functionCode),
-      dnaAddress: `L${functionLibrary.length + 1}`,
-      usageCount: 0,
-      dateCreated: new Date().toISOString(),
-      author: "Developer",
-    }
-
-    setFunctionLibrary((prev) => [...prev, newFunction])
-    addTerminalOutput("system", `Function "${name}" added to library with address ${newFunction.dnaAddress}`)
-  }
-
-  const searchFunctions = (query: string) => {
-    setSearchQuery(query)
-    if (!query.trim()) {
-      setFilteredFunctions(functionLibrary)
+      addTerminalOutput(`Address ${addressId} not found in registry`, "error")
       return
     }
 
-    const filtered = functionLibrary.filter(
-      (func) =>
-        func.name.toLowerCase().includes(query.toLowerCase()) ||
-        func.description.toLowerCase().includes(query.toLowerCase()) ||
-        func.category.toLowerCase().includes(query.toLowerCase()) ||
-        func.tags.some((tag) => tag.toLowerCase().includes(query.toLowerCase())),
-    )
-    setFilteredFunctions(filtered)
-  }
+    // Update animation state for active and pulsing nodes
+    setAnimationState((prev) => ({
+      ...prev,
+      activeAddresses: [...prev.activeAddresses, addressId],
+      pulsingNodes: [...prev.pulsingNodes, addressId],
+    }))
 
-  const addFunctionToProject = (libraryFunction: LibraryFunction) => {
-    if (!currentProject) {
-      const newProject: DeveloperProject = {
-        id: `proj-${Date.now()}`,
-        name: "New Project",
-        dnaStrands: {},
-        usedFunctions: {},
-        projectLibrary: [],
-        createdAt: new Date().toISOString(), // Set creation timestamp
+    addTerminalOutput(`🔮 Summoning ${addressId}...`, "system")
+
+    // Simulate execution delay and update terminal output
+    setTimeout(async () => {
+      try {
+        addTerminalOutput(`⚡ Executing ${addressId}: ${registryEntry.node.command}`, "output")
+        const result = await registryEntry.executionFunction()
+        addTerminalOutput(`✅ Completed ${addressId}`, "output")
+
+        // Update animation state after execution
+        setAnimationState((prev) => ({
+          activeAddresses: prev.activeAddresses.filter((a) => a !== addressId),
+          pulsingNodes: prev.pulsingNodes.filter((a) => a !== addressId),
+          flowingData: [], // Clear flowing data for simplicity
+        }))
+      } catch (error) {
+        console.error(`Error executing ${addressId}:`, error)
+        addTerminalOutput(`❌ Failed ${addressId}: ${error.message}`, "error")
+        setAnimationState((prev) => ({
+          activeAddresses: prev.activeAddresses.filter((a) => a !== addressId),
+          pulsingNodes: prev.pulsingNodes.filter((a) => a !== addressId),
+        }))
       }
-      setCurrentProject(newProject)
-    }
-
-    // Create a unique DNA address for this project usage
-    const projectAddress = `P${Object.keys(currentProject?.usedFunctions || {}).length + 1}`
-
-    setCurrentProject((prev) =>
-      prev
-        ? {
-            ...prev,
-            usedFunctions: {
-              ...prev.usedFunctions,
-              [projectAddress]: libraryFunction.dnaAddress,
-            },
-          }
-        : null,
-    )
-
-    // Update usage count in library
-    setFunctionLibrary((prev) =>
-      prev.map((func) => (func.id === libraryFunction.id ? { ...func, usageCount: func.usageCount + 1 } : func)),
-    )
-
-    addTerminalOutput(
-      "system",
-      `Function "${libraryFunction.name}" assigned address ${projectAddress} in current project`,
-    )
+    }, 1000) // Delay for visualization
   }
 
-  const addTerminalOutput = (type: TerminalOutput["type"], content: string) => {
-    const output: TerminalOutput = {
-      id: `term-${Date.now()}`,
-      type,
-      content,
-      timestamp: Date.now(),
-    }
-    setTerminalOutput((prev) => [...prev, output])
+  const addTerminalOutput = (content: string, type: TerminalOutput["type"]) => {
+    setTerminalOutput((prev) => [
+      ...prev,
+      {
+        id: `term-${Date.now()}`,
+        type,
+        content,
+        timestamp: Date.now(),
+      },
+    ])
   }
 
-  const executeTerminalCommand = async (command: string) => {
-    addTerminalOutput("input", `> ${command}`)
+  const handleTerminalCommand = (command: string) => {
+    addTerminalOutput(`$ ${command}`, "input")
 
-    try {
-      const [cmd, ...args] = command.trim().split(" ")
+    const lowerCommand = command.toLowerCase().trim()
 
-      // Handle direct address input (like "a5" instead of "run a5")
-      if (/^a\d+$/.test(cmd)) {
-        const address = cmd
-        if (addressRegistry[address]) {
-          const result = await summonAddress(address)
-        } else {
-          addTerminalOutput("error", `Address ${address} not found`)
-        }
-      } else if (cmd === "run" && args[0]) {
-        const address = args[0]
-        if (addressRegistry[address]) {
-          const result = await summonAddress(address)
-        } else {
-          addTerminalOutput("error", `Address ${address} not found`)
-        }
-      } else if (cmd === "summon" && args[0]) {
-        const address = args[0]
-        if (addressRegistry[address]) {
-          addTerminalOutput("system", `🔮 Summoning ${address}...`)
-          const result = await summonAddress(address)
-        } else {
-          addTerminalOutput("error", `Address ${address} not found`)
-        }
-      } else if (cmd === "search" && args[0]) {
-        const query = args.join(" ")
-        searchFunctions(query)
-        addTerminalOutput("output", `🔍 Found ${filteredFunctions.length} functions matching "${query}"`)
-      } else if (cmd === "list") {
-        const category = args[0]
-        if (category) {
-          const categoryFunctions = functionLibrary.filter((f) => f.category === category)
-          addTerminalOutput(
-            "output",
-            `📚 Functions in ${category}:\n${categoryFunctions.map((f) => `  ${f.dnaAddress}: ${f.name}`).join("\n")}`,
-          )
-        } else {
-          addTerminalOutput(
-            "output",
-            `📚 Function Library (${functionLibrary.length} functions):\n${functionLibrary.map((f) => `  ${f.dnaAddress}: ${f.name} [${f.category}]`).join("\n")}`,
-          )
-        }
-      } else if (cmd === "project") {
-        if (currentProject) {
-          addTerminalOutput(
-            "output",
-            `📁 Current Project: ${currentProject.name}\n  Functions Used: ${Object.keys(currentProject.usedFunctions).length}\n  Created: ${new Date(currentProject.createdAt).toLocaleString()}`,
-          )
-        } else {
-          addTerminalOutput("output", "📁 No active project")
-        }
-      } else if (cmd === "analyze") {
-        // Use spiralNodes for analysis, assuming they represent the current code being analyzed
-        const duplicateCount = spiralNodes.filter((n) => n.isDuplicate).length
-        const totalLines = spiralNodes.length
-        const efficiency = totalLines > 0 ? (((totalLines - duplicateCount) / totalLines) * 100).toFixed(1) : "0"
-        addTerminalOutput(
-          "output",
-          `🔬 Code Analysis:\n  Total Lines: ${totalLines}\n  Duplicates: ${duplicateCount}\n  Efficiency: ${efficiency}%`,
-        )
-      } else if (cmd === "stats") {
-        const totalFunctions = functionLibrary.length
-        const totalProjects = currentProject ? 1 : 0 // Simple count for now
-        // Estimate energy saved based on duplicate lines in the current spiralNodes
-        const estimatedEnergySaved = Math.floor(spiralNodes.filter((n) => n.isDuplicate).length * 0.1) // Example: 0.1 kWh per duplicate line
-        addTerminalOutput(
-          "output",
-          `📊 CodeMap Statistics:\n  Functions in Library: ${totalFunctions}\n  Active Projects: ${totalProjects}\n  Estimated Energy Saved (current): ${estimatedEnergySaved} kWh`,
-        )
-      } else if (cmd === "version") {
-        addTerminalOutput(
-          "output",
-          `🧬 CodeMap DNA v1.0.0\n  Advanced Code Optimization Platform\n  Energy-Efficient Development Tools`,
-        )
-      } else if (cmd === "debug") {
-        const mode = args[0] === "off" ? false : true
-        addTerminalOutput("system", `🐛 Debug mode ${mode ? "enabled" : "disabled"}`)
-      } else if (cmd === "clear") {
-        setTerminalOutput([])
-      } else if (cmd === "help") {
-        const target = args[0]
-        if (target && COMMAND_LIBRARY[target]) {
-          const cmdInfo = COMMAND_LIBRARY[target]
-          addTerminalOutput(
-            "output",
-            `📖 ${target.toUpperCase()}\n  ${cmdInfo.description}\n  Usage: ${cmdInfo.usage}\n  Category: ${cmdInfo.category}`,
-          )
-        } else if (target) {
-          // Show commands in category
-          const categoryCommands = Object.entries(COMMAND_LIBRARY).filter(
-            ([_, info]) => info.category.toLowerCase() === target.toLowerCase(),
-          )
-          if (categoryCommands.length > 0) {
-            addTerminalOutput(
-              "output",
-              `📖 ${target.toUpperCase()} COMMANDS:\n${categoryCommands.map(([cmd, info]) => `  ${cmd}: ${info.description}`).join("\n")}`,
-            )
-          } else {
-            addTerminalOutput("error", `No help found for "${target}"`)
-          }
-        } else {
-          // Show all commands organized by category
-          const categories = [...new Set(Object.values(COMMAND_LIBRARY).map((cmd) => cmd.category))]
-          let helpText = "📖 CODEMAP COMMAND LIBRARY\n\n"
-          categories.forEach((category) => {
-            helpText += `${category.toUpperCase()}:\n`
-            Object.entries(COMMAND_LIBRARY)
-              .filter(([_, info]) => info.category === category)
-              .forEach(([cmd, info]) => {
-                helpText += `  ${cmd.padEnd(12)} ${info.description}\n`
-              })
-            helpText += "\n"
-          })
-          helpText += "Type 'help <command>' for detailed usage or 'help <category>' for category commands."
-          addTerminalOutput("output", helpText)
-        }
+    if (handleGenomeCommands(command)) {
+      return
+    }
+
+    // Handle address execution (a1, a2, etc.)
+    if (lowerCommand.match(/^a\d+$/)) {
+      summonAddress(lowerCommand)
+      return
+    }
+
+    if (lowerCommand.match(/^[a-z]\.[a-z]\.\d+\.\d+$/)) {
+      const genome = genomeTree.find((g) => g.hierarchicalAddress.toLowerCase() === lowerCommand)
+      if (genome) {
+        addTerminalOutput(`Executing genome function: ${genome.name}`, "output")
+        summonAddress(genome.dnaAddress)
       } else {
-        // Try to execute as JavaScript
-        const result = eval(command)
-        addTerminalOutput("output", String(result))
+        addTerminalOutput(`Hierarchical address ${lowerCommand} not found`, "error")
       }
-    } catch (error) {
-      addTerminalOutput("error", `Error: ${error}`)
-    }
-  }
-
-  const extractParameters = (code: string): string[] => {
-    const match = code.match(/function\s+\w+\s*$$([^)]*)$$/)
-    if (match && match[1]) {
-      return match[1]
-        .split(",")
-        .map((p) => p.trim())
-        .filter((p) => p)
-    }
-    return []
-  }
-
-  const extractReturnType = (code: string): string => {
-    if (code.includes("return ")) return "any"
-    return "void"
-  }
-
-  const extractTags = (code: string): string[] => {
-    const tags = []
-    if (code.includes("async")) tags.push("async")
-    if (code.includes("Promise")) tags.push("promise")
-    if (code.includes("fetch")) tags.push("api")
-    if (code.includes("console.log")) tags.push("debug")
-    return tags
-  }
-
-  const getCategoryColor = (category: string) => {
-    switch (category.toLowerCase()) {
-      case "dna operations":
-        return "bg-primary"
-      case "function library":
-        return "bg-secondary"
-      case "project management":
-        return "bg-accent"
-      case "code analysis":
-        return "bg-chart-3"
-      case "system":
-        return "bg-destructive"
-      case "development":
-        return "bg-purple-500"
-      case "math":
-        return "bg-green-500"
-      case "control":
-        return "bg-orange-500"
-      case "data":
-        return "bg-blue-500"
-      case "validation":
-        return "bg-pink-500"
-      default:
-        return "bg-gray-500"
-    }
-  }
-
-  const handleDrop = (
-    e: React.DragEvent<HTMLDivElement>,
-    setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>,
-    setProjectAnalysis: React.Dispatch<React.SetStateAction<ProjectAnalysis | null>>,
-    setSpiralNodes: React.Dispatch<React.SetStateAction<ProcessNode[]>>,
-    setFunctionBlocks: React.Dispatch<React.SetStateAction<FunctionBlock[]>>,
-    setInputCode: React.Dispatch<React.SetStateAction<string>>,
-    setLoadedFiles: React.Dispatch<React.SetStateAction<File[]>>,
-    setDragActive: React.Dispatch<React.SetStateAction<boolean>>,
-    setIsMounted: React.Dispatch<React.SetStateAction<boolean>>,
-    setForkSpirals: React.Dispatch<React.SetStateAction<ForkSpiral[]>>,
-    setMapData: React.Dispatch<React.SetStateAction<MapData[]>>,
-    setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
-    setShowFileLoader: React.Dispatch<React.SetStateAction<boolean>>,
-    setActiveView: React.Dispatch<React.SetStateAction<string>>,
-    setSelectedNode: React.Dispatch<React.SetStateAction<ProcessNode | null>>,
-    setRunningBlock: React.Dispatch<React.SetStateAction<FunctionBlock | null>>,
-    setExpandedBlocks: React.Dispatch<React.SetStateAction<string[]>>,
-  ) => {
-    e.preventDefault()
-    setDragActive(false)
-    const files = Array.from(e.dataTransfer.files)
-    handleFiles(files, {
-      setIsAnalyzing,
-      setProjectAnalysis,
-      setSpiralNodes,
-      setFunctionBlocks,
-      setInputCode,
-      setLoadedFiles,
-      setIsMounted,
-      setForkSpirals,
-      setMapData,
-      setIsLoading,
-      setShowFileLoader,
-      setActiveView,
-      setSelectedNode,
-      setRunningBlock,
-      setExpandedBlocks,
-    })
-  }
-
-  const handleDragOver = (
-    e: React.DragEvent<HTMLDivElement>,
-    setDragActive: React.Dispatch<React.SetStateAction<boolean>>,
-  ) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(true)
-  }
-
-  const handleDragLeave = (
-    e: React.DragEvent<HTMLDivElement>,
-    setDragActive: React.Dispatch<React.SetStateAction<boolean>>,
-  ) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragActive(false)
-  }
-
-  const handleFileUploadMultiple = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>,
-    setProjectAnalysis: React.Dispatch<React.SetStateAction<ProjectAnalysis | null>>,
-    setSpiralNodes: React.Dispatch<React.SetStateAction<ProcessNode[]>>,
-    setFunctionBlocks: React.Dispatch<React.SetStateAction<FunctionBlock[]>>,
-    setInputCode: React.Dispatch<React.SetStateAction<string>>,
-    setLoadedFiles: React.Dispatch<React.SetStateAction<File[]>>,
-    setIsMounted: React.Dispatch<React.SetStateAction<boolean>>,
-    setForkSpirals: React.Dispatch<React.SetStateAction<ForkSpiral[]>>,
-    setMapData: React.Dispatch<React.SetStateAction<MapData[]>>,
-    setIsLoading: React.Dispatch<React.SetStateAction<boolean>>,
-    setShowFileLoader: React.Dispatch<React.SetStateAction<boolean>>,
-    setActiveView: React.Dispatch<React.SetStateAction<string>>,
-    setSelectedNode: React.Dispatch<React.SetStateAction<ProcessNode | null>>,
-    setRunningBlock: React.Dispatch<React.SetStateAction<FunctionBlock | null>>,
-    setExpandedBlocks: React.Dispatch<React.SetStateAction<string[]>>,
-  ) => {
-    const files = Array.from(e.target.files || [])
-    handleFiles(files, {
-      setIsAnalyzing,
-      setProjectAnalysis,
-      setSpiralNodes,
-      setFunctionBlocks,
-      setInputCode,
-      setLoadedFiles,
-      setIsMounted,
-      setForkSpirals,
-      setMapData,
-      setIsLoading,
-      setShowFileLoader,
-      setActiveView,
-      setSelectedNode,
-      setRunningBlock,
-      setExpandedBlocks,
-    })
-  }
-
-  const handleFiles = async (
-    files: File[],
-    setters: {
-      setIsAnalyzing: React.Dispatch<React.SetStateAction<boolean>>
-      setProjectAnalysis: React.Dispatch<React.SetStateAction<ProjectAnalysis | null>>
-      setSpiralNodes: React.Dispatch<React.SetStateAction<ProcessNode[]>>
-      setFunctionBlocks: React.Dispatch<React.SetStateAction<FunctionBlock[]>>
-      setInputCode: React.Dispatch<React.SetStateAction<string>>
-      setLoadedFiles: React.Dispatch<React.SetStateAction<File[]>>
-      setIsMounted: React.Dispatch<React.SetStateAction<boolean>>
-      setForkSpirals: React.Dispatch<React.SetStateAction<ForkSpiral[]>>
-      setMapData: React.Dispatch<React.SetStateAction<MapData[]>>
-      setIsLoading: React.Dispatch<React.SetStateAction<boolean>>
-      setShowFileLoader: React.Dispatch<React.SetStateAction<boolean>>
-      setActiveView: React.Dispatch<React.SetStateAction<string>>
-      setSelectedNode: React.Dispatch<React.SetStateAction<ProcessNode | null>>
-      setRunningBlock: React.Dispatch<React.SetStateAction<FunctionBlock | null>>
-      setExpandedBlocks: React.Dispatch<React.SetStateAction<string[]>>
-    },
-  ) => {
-    setters.setIsAnalyzing(true)
-    setters.setLoadedFiles(files)
-    setters.setShowFileLoader(false)
-
-    // Simulate analysis and data generation
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-
-    const sampleProjectAnalysis: ProjectAnalysis = {
-      totalFiles: files.length,
-      totalLines: 5000 + files.length * 100,
-      totalDuplicates: 500 + files.length * 20,
-      overallEnergySavings: 15.5,
-      optimizationPotential: 25.0,
-      fileAnalyses: files.map((file) => ({
-        fileName: file.name,
-        fileType: file.name.split(".").pop() || "unknown",
-        totalLines: 1000,
-        duplicateLines: 100,
-        uniqueLines: 900,
-        energySavings: 10.2,
-        optimizationPotential: 20.0,
-        functionBlocks: Math.floor(Math.random() * 5),
-        categories: {
-          logic: 3,
-          ui: 2,
-          api: 1,
-        },
-      })),
-      globalDuplicates: {
-        common_function_a: ["file1.js", "file2.ts"],
-        duplicate_loop_b: ["file3.py", "file4.java"],
-      },
+      return
     }
 
-    const sampleNodes: ProcessNode[] = Array.from({ length: 50 }, (_, i) => {
-      const angle = (i / 50) * Math.PI * 5
-      const radius = 10
-      const height = 25 - i * 0.5
-      const smoothAngle = angle + Math.sin(angle * 2) * 0.3
-      const command = [
-        "fetch_data",
-        "process_data",
-        "render_ui",
-        "save_config",
-        "validate_input",
-        "calculate_sum",
-        "if_condition",
-        "loop_items",
-      ][i % 8]
-      const category = ["data", "data", "ui", "config", "validation", "math", "control", "control"][i % 8]
-      const isDuplicate = i % 5 === 0
-      const duplicateCount = isDuplicate ? Math.floor(Math.random() * 3) + 2 : 1
-      const referenceTo = isDuplicate ? i - Math.floor(Math.random() * 5) - 1 : undefined
+    // Handle run command
+    if (lowerCommand.startsWith("run ")) {
+      const address = lowerCommand.replace("run ", "").trim()
+      summonAddress(address)
+      return
+    }
 
-      return {
-        index: i,
-        coords: [Math.cos(smoothAngle) * radius, height, Math.sin(smoothAngle) * radius] as [number, number, number],
-        strand: i % 2,
-        base: ["A", "T", "C", "G"][i % 4],
-        complement: ["T", "A", "G", "C"][i % 4],
-        angle: 0,
-        base_pair_id: `bp-${i}`,
-        command: `${command}_${i}`,
-        category: category,
-        isDuplicate: isDuplicate,
-        duplicateCount: duplicateCount,
-        referenceTo: referenceTo,
-        address: `a${i + 1}`,
-        functionName: `${command}_${i}`,
-        code: `function ${command}_${i}() {\n  // Sample code for ${command}\n  console.log('Executing ${command}_${i}');\n  return ${Math.random()};\n}`,
-      }
-    })
+    // Handle summon command
+    if (lowerCommand.startsWith("summon ")) {
+      const address = lowerCommand.replace("summon ", "").trim()
+      summonAddress(address)
+      return
+    }
 
-    const sampleFunctionBlocks: FunctionBlock[] = [
-      {
-        id: "func-1",
-        name: "Data Processing Pipeline",
-        startAddress: 1,
-        endAddress: 5,
-        addresses: [1, 2, 3, 4, 5],
-        lineComposition: ["a2", "a3", "a4", "a5"],
-        originalLines: ["a2", "a3", "a4", "a5"],
-        optimizedLines: ["a2", "a3", "a4", "a5"],
-        duplicateReplacements: {},
-        category: "data",
-        description: "Processes fetched data",
-      },
-      {
-        id: "func-2",
-        name: "UI Rendering",
-        startAddress: 7,
-        endAddress: 10,
-        addresses: [7, 8, 9, 10],
-        lineComposition: ["a8", "a9", "a10"],
-        originalLines: ["a7", "a8", "a9", "a10"],
-        optimizedLines: ["a7", "a8", "a9", "a10"],
-        duplicateReplacements: {},
-        category: "ui",
-        description: "Renders the user interface",
-      },
-    ]
+    // Handle help command
+    if (lowerCommand === "help") {
+      Object.entries(COMMAND_LIBRARY).forEach(([cmd, info]) => {
+        addTerminalOutput(`${cmd}: ${info.description}`, "output")
+      })
+      return
+    }
 
-    setters.setProjectAnalysis(sampleProjectAnalysis)
-    setters.setSpiralNodes(sampleNodes)
-    setters.setFunctionBlocks(sampleFunctionBlocks)
-    setters.setForkSpirals([]) // Placeholder
-    setters.setMapData([]) // Placeholder
-    setters.setIsLoading(false)
-    setters.setIsAnalyzing(false)
-    setters.setActiveView("3d")
-    setters.setSelectedNode(null)
-    setters.setRunningBlock(null)
-    setters.setExpandedBlocks([])
+    // Handle clear command
+    if (lowerCommand === "clear") {
+      setTerminalOutput([])
+      return
+    }
+
+    addTerminalOutput(`Unknown command: ${command}. Type 'help' for available commands.`, "error")
   }
 
-  useEffect(() => {
-    try {
-      setIsMounted(true)
-
-      const generateSampleData = () => {
-        const sampleProcesses = [
-          {
-            address: "A1",
-            command: "calculate_sum",
-            category: "math",
-            functionName: "add",
-            code: "function add(a, b) {\n  return a + b;\n}",
-          },
-          {
-            address: "A2",
-            command: "if market_open",
-            category: "control",
-            is_fork: true,
-            fork_type: "if",
-            functionName: "checkMarket",
-            code: "function checkMarket() {\n  // Check if market is open\n  return true;\n}",
-          },
-          {
-            address: "A3",
-            command: "fetch_data",
-            category: "data",
-            functionName: "getData",
-            code: "async function getData() {\n  const response = await fetch('/api/data');\n  return await response.json();\n}",
-          },
-          {
-            address: "A4",
-            command: "process_results",
-            category: "data",
-            functionName: "processData",
-            code: "function processData(data) {\n  // Process the fetched data\n  return processed;\n}",
-          },
-          {
-            address: "A5",
-            command: "save_output",
-            category: "data",
-            functionName: "saveOutput",
-            code: "function saveOutput(output) {\n  console.log('Saving:', output);\n}",
-          },
-          {
-            address: "A6",
-            command: "for item in list",
-            category: "control",
-            is_fork: true,
-            fork_type: "for",
-            functionName: "loopItems",
-            code: "function loopItems(list) {\n  list.forEach(item => console.log(item));\n}",
-          },
-          {
-            address: "A7",
-            command: "validate_input",
-            category: "validation",
-            functionName: "validateInput",
-            code: "function validateInput(input) {\n  return input !== null && input !== undefined;\n}",
-          },
-          {
-            address: "A8",
-            command: "transform_data",
-            category: "data",
-            functionName: "transformData",
-            code: "function transformData(data) {\n  // Transform data structure\n  return transformed;\n}",
-          },
-        ]
-
-        const processedNodes = sampleProcesses.map((process, index) => {
-          const angle = (index / sampleProcesses.length) * Math.PI * 5 // Increased turns
-          const radius = 10 // Reduced radius for compactness
-          const height = 25 - index * 3 // Reduced height spacing
-          const smoothAngle = angle + Math.sin(angle * 2) * 0.3 // Add smoothing
-
-          return {
-            ...process,
-            coords: [Math.cos(smoothAngle) * radius, height, Math.sin(smoothAngle) * radius] as [
-              number,
-              number,
-              number,
-            ],
-            subprocesses: [],
-            direction: null,
-          }
-        })
-
-        setSpiralNodes(processedNodes)
-        buildAddressRegistry(processedNodes)
-
-        setMapData(
-          sampleProcesses.map((p, i) => ({
-            ...p,
-            coords: processedNodes[i].coords,
-            subprocesses: [],
-            direction: null,
-          })),
-        )
-        setIsLoading(false)
-      }
-
-      generateSampleData()
-    } catch (error) {
-      console.error("[v0] Error in mount effect:", error)
-      setHasError(true)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (spiralNodes && spiralNodes.length > 0) {
-      buildAddressRegistry(spiralNodes)
-    }
-  }, [spiralNodes])
-
-  if (hasError) {
+  if (!isMounted || isLoading) {
+    // Added isLoading check
     return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-red-400 mb-4">Something went wrong</h1>
-          <p className="text-gray-300 mb-4">Please refresh the page to try again.</p>
-          <Button onClick={() => window.location.reload()} className="bg-blue-600 hover:bg-blue-700">
-            Refresh Page
-          </Button>
-        </div>
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-[#39FF14] text-xl glow-text">Loading CodeMap...</div>
       </div>
     )
   }
 
+  // Group functions by project for the library view
+  const groupedFunctions = functionLibrary.reduce(
+    (acc, func) => {
+      const projectName = func.project || "Unassigned"
+      if (!acc[projectName]) {
+        acc[projectName] = []
+      }
+      acc[projectName].push(func)
+      return acc
+    },
+    {} as { [key: string]: LibraryFunction[] },
+  )
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-black text-white font-mono">
-      <header className="border-b border-primary/30 bg-gradient-to-r from-card via-card/90 to-card glass-effect">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                CodeMap Developer Platform
-              </h1>
-              <p className="text-muted-foreground">DNA-Based Development Environment with Function Library</p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setShowFileLoader(!showFileLoader)}
-                className="bg-primary hover:bg-primary/80 neon-border"
-              >
-                {showFileLoader ? "Hide" : "Load Files"}
-              </Button>
-              <Button
-                onClick={() => setShowLibrary(!showLibrary)}
-                className="bg-secondary hover:bg-secondary/80 neon-border"
-              >
-                {showLibrary ? "Hide" : "Function Library"}
-              </Button>
-              <Button
-                onClick={() => setShowTerminal(!showTerminal)}
-                className="bg-accent hover:bg-accent/80 neon-border"
-              >
-                {showTerminal ? "Hide" : "Terminal"}
-              </Button>
-              <Button
-                onClick={() => setActiveView(activeView === "3d" ? "2d" : "3d")}
-                className="bg-chart-3 hover:bg-chart-3/80 neon-border"
-              >
-                {activeView === "3d" ? "2D View" : "3D View"}
-              </Button>
-            </div>
+    <div className="min-h-screen bg-black text-[#39FF14] flex flex-col">
+      {/* Main IDE Container */}
+      <header className="h-14 border-b border-[#C0C0C0] bg-black flex items-center px-4 gap-4">
+        <h1 className="text-2xl font-bold text-[#39FF14] glow-text">CodeMap IDE</h1>
+        <button
+          onClick={() => setShowFileLoader(!showFileLoader)}
+          className="px-4 py-2 bg-black border border-[#C0C0C0] text-[#39FF14] rounded hover:bg-[#1a1a1a] transition-colors glow-text"
+        >
+          Load Files
+        </button>
+        <button
+          onClick={() => setShowFileTree(!showFileTree)}
+          className="px-4 py-2 bg-black border border-[#C0C0C0] text-[#39FF14] rounded hover:bg-[#1a1a1a] transition-colors glow-text"
+        >
+          File Tree
+        </button>
+        <button
+          onClick={() => setShowScriptConverter(!showScriptConverter)}
+          className="px-4 py-2 bg-black border border-[#C0C0C0] text-[#39FF14] rounded hover:bg-[#1a1a1a] transition-colors glow-text"
+        >
+          Script Converter
+        </button>
+        {projectAnalysis && (
+          <div className="ml-auto flex items-center gap-2 px-4 py-2 border border-[#39FF14] rounded bg-black">
+            <span className="text-[#00FF00] glow-text">⚡ Energy Saved:</span>
+            <span className="text-[#39FF14] font-bold">{projectAnalysis.overallEnergySavings.toFixed(2)}%</span>
+            <span className="text-[#C0C0C0] text-sm">({projectAnalysis.totalDuplicates} duplicates removed)</span>
           </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveView("3d")}
+            className={`px-4 py-2 rounded border transition-colors ${activeView === "3d" ? "bg-[#39FF14] text-black border-[#39FF14]" : "bg-black border-[#C0C0C0] text-[#39FF14] hover:border-[#39FF14]"}`}
+          >
+            3D View
+          </button>
+          <button
+            onClick={() => setActiveView("2d")}
+            className={`px-4 py-2 rounded border transition-colors ${activeView === "2d" ? "bg-[#39FF14] text-black border-[#39FF14]" : "bg-black border-[#C0C0C0] text-[#39FF14] hover:border-[#39FF14]"}`}
+          >
+            2D View
+          </button>
         </div>
+        <button
+          onClick={() => {
+            buildGenomeTree()
+            setShowGenomeView(!showGenomeView)
+          }}
+          className="px-4 py-2 bg-black border border-[#39FF14] text-[#39FF14] rounded hover:bg-[#1a1a1a] transition-colors glow-text"
+        >
+          🧬 Genome Tree
+        </button>
+        <button
+          onClick={() => setShowAIChat(!showAIChat)}
+          className="px-4 py-2 bg-black border border-[#00FF00] text-[#00FF00] rounded hover:bg-[#1a1a1a] transition-colors glow-text"
+        >
+          🤖 AI Agent
+        </button>
       </header>
 
-      {showLibrary && (
-        <div className="glass-effect border-b border-primary/30 p-4">
-          <div className="max-w-6xl mx-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-secondary">📚 Function Library</h3>
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar - Function Library */}
+        <aside className="w-80 border-r border-[#C0C0C0] bg-black flex flex-col overflow-hidden">
+          <div className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-[#39FF14] glow-text">Function Library</h2>
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Search functions..."
-                  value={searchQuery}
-                  onChange={(e) => searchFunctions(e.target.value)}
-                  className="px-3 py-1 bg-card border border-primary/30 rounded text-white neon-border"
-                />
-                <Button
-                  onClick={() => {
-                    const name = prompt("Function name:")
-                    const description = prompt("Description:")
-                    const code = prompt("Function code:")
-                    const category = prompt("Category:")
-                    if (name && description && code && category) {
-                      addToLibrary(code, name, description, category)
-                    }
-                  }}
-                  className="bg-secondary hover:bg-secondary/80 neon-border text-sm"
+                <button
+                  onClick={() => setLibraryView(libraryView === "list" ? "pulldown" : "list")}
+                  className="text-xs px-2 py-1 border border-[#C0C0C0] rounded text-[#00FF00] hover:bg-[#1a1a1a]"
                 >
-                  Add Function
-                </Button>
+                  {libraryView === "list" ? "List" : "Pulldown"}
+                </button>
+                <button
+                  onClick={() => setLibrarySortBy(librarySortBy === "alphabetic" ? "project" : "alphabetic")}
+                  className="text-xs px-2 py-1 border border-[#C0C0C0] rounded text-[#00FF00] hover:bg-[#1a1a1a]"
+                >
+                  {librarySortBy === "alphabetic" ? "A-Z" : "Project"}
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-              {(searchQuery ? filteredFunctions : functionLibrary).map((func) => (
-                <div key={func.id} className="bg-card rounded-lg p-4 border border-primary/30 neon-border">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-semibold text-white">{func.name}</h4>
-                    <span className="text-xs bg-secondary px-2 py-1 rounded">{func.dnaAddress}</span>
+            {/* Conditionally render based on libraryView */}
+            {libraryView === "list" ? (
+              <div className="space-y-2">
+                {functionBlocks.map((block) => (
+                  <div
+                    key={block.id}
+                    className="p-3 border border-[#C0C0C0] rounded bg-black hover:bg-[#1a1a1a] cursor-pointer transition-colors"
+                    onClick={() => {
+                      setExpandedBlocks((prev) =>
+                        prev.includes(block.id) ? prev.filter((id) => id !== block.id) : [...prev, block.id],
+                      )
+                    }}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-bold text-[#00FF00] glow-text">{block.name}</div>
+                        <div className="text-sm text-[#39FF14]">{block.id}</div>
+                        <div className="text-xs text-[#C0C0C0] mt-1">Addresses: {block.addresses.length}</div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRunningBlock(block)
+                          addTerminalOutput(
+                            `Running ${block.name} (${block.startAddress}-${block.endAddress})`,
+                            "system",
+                          )
+                          // You might want to trigger the execution of the first address of the block here
+                          if (block.addresses.length > 0) {
+                            summonAddress(`a${block.addresses[0] + 1}`) // Assuming addresses are 1-based
+                          }
+                        }}
+                        className="px-2 py-1 text-xs bg-[#39FF14] text-black rounded hover:bg-[#00FF00] transition-colors"
+                      >
+                        Run From Here
+                      </button>
+                    </div>
+
+                    {expandedBlocks.includes(block.id) && (
+                      <div className="mt-2 pt-2 border-t border-[#C0C0C0]/30">
+                        <div className="text-xs space-y-1">
+                          {block.lineComposition.map((line, idx) => (
+                            <div key={idx} className="text-[#7FFF00]">
+                              {line}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-muted-foreground text-sm mb-2">{func.description}</p>
-                  <div className="flex items-center justify-between text-xs text-gray-400">
-                    <span>{func.category}</span>
-                    <span>Used: {func.usageCount}x</span>
+                ))}
+              </div> // Pulldown view
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(groupedFunctions).map(([projectName, functions]) => (
+                  <div key={projectName} className="space-y-2">
+                    <div className="text-[#00FF00] font-bold text-sm border-b border-[#C0C0C0]/30 pb-1">
+                      {projectName}
+                    </div>
+                    {functions.map((func, idx) => (
+                      <div
+                        key={idx}
+                        className="border border-[#C0C0C0]/50 rounded p-2 hover:border-[#39FF14] transition-colors group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm text-[#39FF14]">{func.name}</div>
+                          <button
+                            onClick={() => addFunctionToBuild(func)}
+                            className="px-2 py-1 text-xs bg-black border border-[#39FF14] text-[#39FF14] rounded hover:bg-[#39FF14] hover:text-black transition-colors opacity-0 group-hover:opacity-100"
+                            title="Add to build"
+                          >
+                            + Add
+                          </button>
+                        </div>
+                        <div className="text-xs text-[#C0C0C0] mt-1">{func.addresses.join(", ")}</div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex gap-1 mt-2">
-                    <Button
-                      onClick={() => addFunctionToProject(func)}
-                      className="bg-primary hover:bg-primary/80 neon-border text-xs px-2 py-1"
-                    >
-                      Use in Project
-                    </Button>
-                    <Button
-                      onClick={() => setSelectedFunction(func)}
-                      className="bg-accent hover:bg-accent/80 neon-border text-xs px-2 py-1"
-                    >
-                      View Code
-                    </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* Center - DNA Visualization */}
+        <main className="flex-1 bg-black relative">
+          {activeView === "3d" ? (
+            <DNASpiral
+              nodes={spiralNodes}
+              forkSpirals={forkSpirals}
+              selectedNode={selectedNode}
+              onNodeClick={setSelectedNode}
+              onAddressClick={(node, index) => {}}
+              setSelectedFunctionCode={setSelectedFunctionCode}
+              setShowCodeModal={setShowCodeModal}
+              animationState={animationState}
+            />
+          ) : (
+            <BirdsEyeView
+              nodes={spiralNodes}
+              functionBlocks={functionBlocks}
+              selectedNode={selectedNode}
+              onNodeClick={setSelectedNode}
+              setSelectedFunctionCode={setSelectedFunctionCode}
+              setShowCodeModal={setShowCodeModal}
+              expandedBlocks={expandedBlocks}
+              runningBlock={runningBlock}
+            />
+          )}
+        </main>
+
+        {/* Right Sidebar - Terminal */}
+        <aside className="w-96 border-l border-[#C0C0C0] bg-black flex flex-col">
+          <div className="p-4 border-b border-[#C0C0C0]">
+            <h2 className="text-xl font-bold text-[#39FF14] glow-text">Terminal</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 font-mono text-sm space-y-1">
+            <div className="text-[#00FF00] glow-text">
+              CodeMap Terminal v1.0
+              <br />
+              Type 'help' for available commands
+              <br />
+              <br />
+            </div>
+            {terminalOutput.map((output) => (
+              <div
+                key={output.id}
+                className={`${
+                  output.type === "error"
+                    ? "text-red-400"
+                    : output.type === "system"
+                      ? "text-[#7FFF00]"
+                      : output.type === "input"
+                        ? "text-[#00FF00]"
+                        : "text-[#39FF14]"
+                }`}
+              >
+                {output.content}
+              </div>
+            ))}
+          </div>
+          <div className="p-4 border-t border-[#C0C0C0]">
+            <input
+              type="text"
+              value={terminalInput}
+              onChange={(e) => setTerminalInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handleTerminalCommand(terminalInput)
+                  setTerminalInput("")
+                }
+              }}
+              placeholder="Enter command..."
+              className="w-full bg-black border border-[#C0C0C0] rounded px-3 py-2 text-[#39FF14] font-mono text-sm focus:outline-none focus:border-[#39FF14]"
+            />
+          </div>
+        </aside>
+      </div>
+
+      {/* File Loader Modal */}
+      {showFileLoader && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-black border-2 border-[#C0C0C0] rounded-lg p-6 max-w-2xl w-full mx-4 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-4 text-[#39FF14] glow-text">Load Project Files</h2>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.zip"
+              onChange={handleFileInputChange}
+              className="hidden"
+            />
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDragActive(true)
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={async (e) => {
+                e.preventDefault()
+                setDragActive(false)
+                const files = Array.from(e.dataTransfer.files)
+                setLoadedFiles(files)
+                addTerminalOutput(`Loaded ${files.length} files`, "system")
+
+                try {
+                  const allNodesArrays = await Promise.all(files.map((file) => importFileAsDNA(file)))
+                  const allNodes = allNodesArrays.flat()
+                  setSpiralNodes(allNodes)
+                  const blocks = detectFunctionBlocks(allNodes)
+                  setFunctionBlocks(blocks)
+                  buildAddressRegistry(allNodes)
+                  addTerminalOutput(`Processed ${allNodes.length} code addresses from ${files.length} files`, "system")
+                } catch (error: any) {
+                  addTerminalOutput(`Error processing files: ${error.message}`, "error")
+                }
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors cursor-pointer ${
+                dragActive ? "border-[#39FF14] bg-[#1a1a1a]" : "border-[#C0C0C0]"
+              }`}
+            >
+              <p className="text-[#39FF14] text-lg glow-text">Drag and drop files here or click to browse</p>
+              <p className="text-[#C0C0C0] text-sm mt-2">Supports .js, .ts, .py, .zip and more</p>
+            </div>
+
+            {loadedFiles.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h3 className="text-[#00FF00] font-bold">Loaded Files:</h3>
+                {loadedFiles.map((file, idx) => (
+                  <div
+                    key={idx}
+                    className="text-sm text-[#39FF14] flex justify-between items-center border border-[#C0C0C0]/30 rounded px-3 py-2"
+                  >
+                    <span>{file.name}</span>
+                    <span className="text-[#C0C0C0]">{(file.size / 1024).toFixed(2)} KB</span>
                   </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setShowFileLoader(false)}
+                className="px-4 py-2 bg-black border border-[#C0C0C0] text-[#39FF14] rounded hover:bg-[#1a1a1a] transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFileTree && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-black border-2 border-[#C0C0C0] rounded-lg p-6 max-w-2xl w-full mx-4 shadow-2xl max-h-[80vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-[#39FF14] glow-text">File Tree View</h2>
+              <button onClick={() => setShowFileTree(false)} className="text-[#C0C0C0] hover:text-[#39FF14] text-2xl">
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2 font-mono text-sm">
+              {loadedFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center gap-2 text-[#39FF14] border-b border-[#C0C0C0]/20 pb-2">
+                  <span className="text-[#00FF00]">📄</span>
+                  <span>{file.name}</span>
+                  <span className="text-[#C0C0C0] text-xs ml-auto">{(file.size / 1024).toFixed(2)} KB</span>
+                </div>
+              ))}
+              {loadedFiles.length === 0 && <p className="text-[#C0C0C0] text-center py-8">No files loaded yet</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showScriptConverter && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+          <div className="bg-black border-2 border-[#C0C0C0] rounded-lg p-6 max-w-4xl w-full mx-4 shadow-2xl max-h-[80vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-[#39FF14] glow-text">Script ⇄ Library Converter</h2>
+              <button
+                onClick={() => setShowScriptConverter(false)}
+                className="text-[#C0C0C0] hover:text-[#39FF14] text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* Script to Library */}
+              <div>
+                <h3 className="text-[#00FF00] font-bold mb-2">Script → Library</h3>
+                <textarea
+                  value={scriptInput}
+                  onChange={(e) => setScriptInput(e.target.value)}
+                  placeholder="Paste your script here..."
+                  className="w-full h-64 bg-black border border-[#C0C0C0] rounded p-3 text-[#39FF14] font-mono text-sm focus:outline-none focus:border-[#39FF14]"
+                />
+                <button
+                  onClick={() => convertScriptToLibrary(scriptInput)}
+                  className="mt-2 px-4 py-2 bg-[#39FF14] text-black rounded hover:bg-[#00FF00] transition-colors font-bold w-full"
+                >
+                  Convert to Library
+                </button>
+              </div>
+
+              {/* Library to Script */}
+              <div>
+                <h3 className="text-[#00FF00] font-bold mb-2">Library → Script</h3>
+                <textarea
+                  value={convertedOutput}
+                  readOnly
+                  placeholder="Converted script will appear here..."
+                  className="w-full h-64 bg-black border border-[#C0C0C0] rounded p-3 text-[#39FF14] font-mono text-sm focus:outline-none"
+                />
+                <button
+                  onClick={() => {
+                    const output = convertLibraryToScript(functionLibrary)
+                    navigator.clipboard.writeText(output)
+                    addTerminalOutput("Script copied to clipboard", "system")
+                  }}
+                  className="mt-2 px-4 py-2 bg-[#39FF14] text-black rounded hover:bg-[#00FF00] transition-colors font-bold w-full"
+                >
+                  Copy to Clipboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Function Code Modal */}
+      <FunctionCodeModal
+        isOpen={showCodeModal}
+        onClose={() => setShowCodeModal(false)}
+        functionData={selectedFunctionCode}
+      />
+
+      {showGenomeView && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
+          <div className="bg-black border-2 border-[#39FF14] rounded-lg p-6 max-w-6xl w-full mx-4 shadow-2xl max-h-[80vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-[#39FF14] glow-text">🧬 Genome Tree Architecture</h2>
+              <button onClick={() => setShowGenomeView(false)} className="text-[#C0C0C0] hover:text-[#39FF14] text-2xl">
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-4 text-[#00FF00] space-y-2">
+              <p>
+                Hierarchical Address Format: <span className="text-[#39FF14] font-mono">P.F.O.G</span>
+              </p>
+              <p className="text-sm text-[#C0C0C0]">
+                P = Program/Repo letter, F = Function letter, O = Order in program, G = Global library index
+              </p>
+              <p>
+                Total Genomes: <span className="text-[#39FF14]">{genomeTree.length}</span>
+              </p>
+              <p>
+                AI Agents: <span className="text-[#39FF14]">{aiAgents.length}</span>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto">
+              {genomeTree.map((genome) => (
+                <div
+                  key={genome.id}
+                  className={`border rounded-lg p-4 transition-all cursor-pointer ${
+                    genome.spawnPoint
+                      ? "border-[#00FF00] bg-[#00FF00]/10"
+                      : "border-[#C0C0C0]/30 hover:border-[#39FF14]"
+                  }`}
+                  onClick={() => setSelectedGenome(genome)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-[#39FF14] font-bold font-mono text-lg">{genome.hierarchicalAddress}</h3>
+                      <p className="text-[#00FF00]">{genome.name}</p>
+                      <p className="text-[#C0C0C0] text-sm">{genome.category}</p>
+                    </div>
+                    <div className="text-right">
+                      {genome.spawnPoint && (
+                        <span className="inline-block px-2 py-1 bg-[#00FF00] text-black text-xs rounded mb-2">
+                          SPAWN POINT
+                        </span>
+                      )}
+                      <p className="text-[#C0C0C0] text-sm">Priority: {genome.priority}</p>
+                      <p className="text-[#C0C0C0] text-sm">Children: {genome.childGenomes.length}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {genome.traits.map((trait) => (
+                      <span
+                        key={trait}
+                        className="px-2 py-1 bg-[#39FF14]/20 border border-[#39FF14]/30 rounded text-xs text-[#39FF14]"
+                      >
+                        {trait}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      spawnAIAgent(genome, `Agent for ${genome.name}`)
+                    }}
+                    className="mt-3 px-3 py-1 bg-[#00FF00] text-black rounded hover:bg-[#39FF14] transition-colors text-sm font-bold"
+                  >
+                    Spawn AI Agent
+                  </button>
                 </div>
               ))}
             </div>
@@ -1641,526 +2012,65 @@ const Page = () => {
         </div>
       )}
 
-      {showTerminal && (
-        <div className="glass-effect border-b border-primary/30 p-4">
-          <div className="max-w-6xl mx-auto">
-            <h3 className="text-lg font-semibold text-primary mb-4">🚀 Output Terminal</h3>
-
-            <div className="bg-black rounded-lg p-4 font-mono text-sm neon-border">
-              <div className="h-64 overflow-y-auto mb-4 space-y-1">
-                {terminalOutput.map((output) => (
-                  <div
-                    key={output.id}
-                    className={`
-                    ${output.type === "input" ? "text-cyan-400" : ""}
-                    ${output.type === "output" ? "text-primary" : ""}
-                    ${output.type === "error" ? "text-destructive" : ""}
-                    ${output.type === "system" ? "text-secondary" : ""}
-                  `}
-                  >
-                    {output.content}
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex items-center">
-                <span className="text-primary mr-2 font-bold">{">"}</span>
-                <input
-                  type="text"
-                  value={terminalInput}
-                  onChange={(e) => setTerminalInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter") {
-                      executeTerminalCommand(terminalInput)
-                      setTerminalInput("")
-                    }
-                  }}
-                  className="flex-1 bg-transparent text-white outline-none terminal-cursor"
-                  placeholder="Enter command..."
-                />
-              </div>
-            </div>
+      {showAIChat && (
+        <div className="fixed bottom-4 right-4 w-96 h-[500px] bg-black border-2 border-[#00FF00] rounded-lg shadow-2xl flex flex-col z-50">
+          <div className="bg-gradient-to-r from-[#00FF00]/20 to-[#39FF14]/20 border-b border-[#00FF00]/30 px-4 py-3 flex items-center justify-between">
+            <h3 className="text-[#00FF00] font-bold glow-text">🤖 AI Agent Chat</h3>
+            <button onClick={() => setShowAIChat(false)} className="text-[#C0C0C0] hover:text-[#00FF00]">
+              ✕
+            </button>
           </div>
-        </div>
-      )}
 
-      {currentProject && (
-        <div className="glass-effect border-b border-primary/30 p-4">
-          <div className="max-w-6xl mx-auto">
-            <h3 className="text-lg font-semibold text-secondary mb-2">📁 Current Project: {currentProject.name}</h3>
-            <div className="flex gap-4 text-sm">
-              <span className="text-muted-foreground">
-                Functions Used: {Object.keys(currentProject.usedFunctions).length}
-              </span>
-              <span className="text-muted-foreground">
-                DNA Addresses: {Object.keys(currentProject.usedFunctions).join(", ")}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selectedFunction && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-lg p-6 max-w-2xl w-full mx-4 max-h-96 overflow-y-auto neon-border">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">{selectedFunction.name}</h3>
-              <Button onClick={() => setSelectedFunction(null)} className="bg-destructive hover:bg-destructive/80">
-                Close
-              </Button>
-            </div>
-            <pre className="bg-black p-4 rounded text-primary text-sm overflow-x-auto">{selectedFunction.code}</pre>
-            <div className="mt-4 text-sm text-muted-foreground">
-              <p>
-                <strong>Address:</strong> {selectedFunction.dnaAddress}
-              </p>
-              <p>
-                <strong>Parameters:</strong> {selectedFunction.parameters.join(", ") || "None"}
-              </p>
-              <p>
-                <strong>Category:</strong> {selectedFunction.category}
-              </p>
-              <p>
-                <strong>Tags:</strong> {selectedFunction.tags.join(", ") || "None"}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showFileLoader && (
-        <div className="glass-effect border-b border-primary/30 p-4">
-          <div className="max-w-4xl mx-auto">
-            <h3 className="text-lg font-semibold text-primary mb-4">📂 Advanced File Loader & System Analysis</h3>
-
-            <div
-              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                dragActive ? "border-primary bg-primary/10" : "border-primary/30 hover:border-primary/50"
-              }`}
-              onDrop={(e) =>
-                handleDrop(
-                  e,
-                  setIsAnalyzing,
-                  setProjectAnalysis,
-                  setSpiralNodes,
-                  setFunctionBlocks,
-                  setInputCode,
-                  setLoadedFiles,
-                  setDragActive,
-                  setIsMounted,
-                  setForkSpirals,
-                  setMapData,
-                  setIsLoading,
-                  setShowFileLoader,
-                  setActiveView,
-                  setSelectedNode,
-                  setRunningBlock,
-                  setExpandedBlocks,
-                )
-              }
-              onDragOver={(e) => handleDragOver(e, setDragActive)}
-              onDragLeave={(e) => handleDragLeave(e, setDragActive)}
-            >
-              <div className="space-y-4">
-                <div className="text-4xl">📂</div>
-                <div>
-                  <p className="text-lg font-medium text-white">Drop files here or click to browse</p>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Supports: .js, .ts, .jsx, .tsx, .py, .java, .cpp, .c, .cs, .php, .rb, .go, .rs, .swift, .kt, .zip,
-                    .txt
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Load entire codebases to analyze energy consumption and optimization potential
-                  </p>
-                </div>
-                <input
-                  type="file"
-                  multiple
-                  accept=".js,.ts,.jsx,.tsx,.py,.java,.cpp,.c,.cs,.php,.rb,.go,.rs,.swift,.kt,.zip,.txt"
-                  onChange={(e) =>
-                    handleFileUploadMultiple(
-                      e,
-                      setIsAnalyzing,
-                      setProjectAnalysis,
-                      setSpiralNodes,
-                      setFunctionBlocks,
-                      setInputCode,
-                      setLoadedFiles,
-                      setIsMounted,
-                      setForkSpirals,
-                      setMapData,
-                      setIsLoading,
-                      setShowFileLoader,
-                      setActiveView,
-                      setSelectedNode,
-                      setRunningBlock,
-                      setExpandedBlocks,
-                    )
-                  }
-                  className="hidden"
-                  id="file-upload-multiple"
-                />
-                <label
-                  htmlFor="file-upload-multiple"
-                  className="inline-block px-6 py-3 bg-primary hover:bg-primary/80 text-white rounded-lg cursor-pointer transition-colors font-medium neon-border"
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 font-mono text-sm">
+            {aiChatMessages.map((msg, idx) => (
+              <div key={idx} className={`${msg.role === "user" ? "text-right" : "text-left"}`}>
+                <div
+                  className={`inline-block max-w-[80%] px-3 py-2 rounded ${
+                    msg.role === "user"
+                      ? "bg-[#39FF14]/20 border border-[#39FF14]/30 text-[#39FF14]"
+                      : "bg-[#00FF00]/20 border border-[#00FF00]/30 text-[#00FF00]"
+                  }`}
                 >
-                  Select Files
-                </label>
-              </div>
-            </div>
-
-            {isAnalyzing && (
-              <div className="mt-4 p-4 bg-primary/20 rounded-lg">
-                <div className="flex items-center space-x-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                  <span className="text-primary/70">Analyzing codebase for optimization opportunities...</span>
-                </div>
-              </div>
-            )}
-
-            {projectAnalysis && (
-              <div className="mt-6 space-y-4">
-                <div className="bg-card rounded-lg p-6 border border-primary/30 neon-border">
-                  <h4 className="text-xl font-bold text-primary mb-4">🌍 Global Impact Analysis</h4>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="bg-primary/20 p-4 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-white">{projectAnalysis.totalFiles}</div>
-                      <div className="text-sm text-primary/70">Files Analyzed</div>
-                    </div>
-                    <div className="bg-secondary/20 p-4 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-white">{projectAnalysis.totalLines.toLocaleString()}</div>
-                      <div className="text-sm text-secondary/70">Total Lines</div>
-                    </div>
-                    <div className="bg-destructive/20 p-4 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-white">
-                        {projectAnalysis.totalDuplicates.toLocaleString()}
-                      </div>
-                      <div className="text-sm text-destructive/70">Duplicate Lines</div>
-                    </div>
-                    <div className="bg-green-600/20 p-4 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-white">
-                        {projectAnalysis.overallEnergySavings.toFixed(1)}%
-                      </div>
-                      <div className="text-sm text-green-400">Energy Savings</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-r from-green-900/20 to-blue-900/20 p-4 rounded-lg mb-4">
-                    <h5 className="font-bold text-white mb-2">🔋 Environmental Impact</h5>
-                    <p className="text-sm text-gray-200">
-                      By eliminating {projectAnalysis.totalDuplicates.toLocaleString()} duplicate lines, this
-                      optimization could reduce CPU cycles by approximately{" "}
-                      <span className="font-bold text-green-300">
-                        {(projectAnalysis.overallEnergySavings * 1000).toFixed(0)}
-                      </span>{" "}
-                      million operations, potentially saving{" "}
-                      <span className="font-bold text-blue-300">
-                        {(projectAnalysis.overallEnergySavings * 0.1).toFixed(2)} kWh
-                      </span>{" "}
-                      of energy per execution cycle.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h5 className="font-semibold text-white">📊 File Analysis Breakdown</h5>
-                    {projectAnalysis.fileAnalyses.map((analysis, index) => (
-                      <div key={index} className="bg-card p-3 rounded border border-primary/30">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <span className="font-mono text-sm text-white">{analysis.fileName}</span>
-                            <span className="ml-2 px-2 py-1 bg-secondary text-xs rounded text-white">
-                              {analysis.fileType}
-                            </span>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm text-green-300 font-bold">
-                              {analysis.energySavings.toFixed(1)}% savings
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {analysis.duplicateLines}/{analysis.totalLines} duplicates
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-2 text-xs text-gray-300">
-                          Optimization Potential:{" "}
-                          <span className="text-yellow-300 font-bold">
-                            {analysis.optimizationPotential.toFixed(1)}%
-                          </span>
-                          {analysis.functionBlocks > 0 && (
-                            <span className="ml-4">
-                              Functions: <span className="text-blue-300">{analysis.functionBlocks}</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="flex h-[calc(100vh-120px)]">
-        <div className="w-80 bg-card border-r border-primary/30 overflow-y-auto">
-          <div className="p-4">
-            <h2 className="text-xl font-bold mb-4 text-primary">Pipeline Control</h2>
-
-            <div className="mb-4 p-3 bg-card rounded border border-primary/30">
-              <h3 className="text-sm font-semibold mb-2 text-secondary">Active Summons</h3>
-              {activeSummons.length > 0 ? (
-                <div className="space-y-1">
-                  {activeSummons.map((addr) => (
-                    <div key={addr} className="text-xs text-secondary font-bold animate-pulse">
-                      🔄 Summoning {addr.toUpperCase()}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground">Pipeline idle</div>
-              )}
-            </div>
-
-            <div className="mb-4 p-3 bg-card rounded border border-primary/30">
-              <h3 className="text-sm font-semibold mb-2 text-secondary">Recent Calls</h3>
-              <div className="space-y-1 max-h-32 overflow-y-auto">
-                {pipelineCalls
-                  .slice(-5)
-                  .reverse()
-                  .map((call, idx) => (
-                    <div key={idx} className="text-xs flex justify-between">
-                      <span className="text-muted-foreground">
-                        {call.addressId?.toUpperCase() || call.toAddress?.toUpperCase()}
-                      </span>
-                      <span
-                        className={`font-medium ${
-                          call.status === "completed"
-                            ? "text-green-400"
-                            : call.status === "executing"
-                              ? "text-yellow-400"
-                              : call.status === "failed"
-                                ? "text-destructive"
-                                : call.status === "summoning"
-                                  ? "text-secondary"
-                                  : "text-muted-foreground"
-                        }`}
-                      >
-                        {call.status === "completed"
-                          ? "✓"
-                          : call.status === "executing"
-                            ? "⚡"
-                            : call.status === "failed"
-                              ? "✗"
-                              : call.status === "summoning"
-                                ? "🔮"
-                                : "⏳"}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-
-            <h3 className="text-lg font-semibold mb-2 text-secondary">Function Blocks</h3>
-            {functionBlocks.map((block) => (
-              <div key={block.id} className="mb-4 p-3 bg-card rounded border border-primary/30">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-mono text-sm text-white">{block.name}</span>
-                  <Button
-                    onClick={() => runFromHere(block.startAddress)}
-                    className="bg-primary hover:bg-primary/80 neon-border text-xs"
-                    disabled={!!runningBlock || activeSummons.length > 0}
-                  >
-                    Summon Block
-                  </Button>
-                </div>
-
-                <div className="text-xs text-muted-foreground mb-2">
-                  <div className="font-semibold text-secondary">
-                    {block.id.toUpperCase()} consists of lines: {block.lineComposition.join(" ")}
-                  </div>
-
-                  <div className="mt-1 text-gray-400">
-                    Original: {block.originalLines.join(" ")} ({block.originalLines.length} lines)
-                  </div>
-                  <div className="text-green-400">
-                    Optimized: {block.optimizedLines.join(" ")} ({block.optimizedLines.length} lines)
-                  </div>
-
-                  {Object.keys(block.duplicateReplacements).length > 0 && (
-                    <div className="mt-1 text-yellow-400 text-xs">
-                      Duplicates replaced:{" "}
-                      {Object.entries(block.duplicateReplacements)
-                        .map(([duplicate, original]) => `${duplicate}→${original}`)
-                        .join(", ")}
-                    </div>
-                  )}
-
-                  <div className="text-teal-400 font-medium">
-                    Efficiency: {Math.round((1 - block.optimizedLines.length / block.originalLines.length) * 100)}%
-                    reduction
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground">
-                  A{block.startAddress + 1} - A{block.endAddress + 1} ({block.addresses.length} processes)
+                  {msg.content}
                 </div>
               </div>
             ))}
-
-            <div className="space-y-2">
-              {spiralNodes.map((node, index) => {
-                const containingBlock = functionBlocks.find((block) => block.addresses.includes(index))
-                const lineRef = `a${index + 1}`
-                const isOptimizedOut = containingBlock?.duplicateReplacements[lineRef]
-                const isBeingSummoned = activeSummons.includes(lineRef)
-
-                return (
-                  <div
-                    key={index}
-                    className={`p-3 rounded cursor-pointer transition-all border ${
-                      isBeingSummoned
-                        ? "bg-secondary border-secondary animate-pulse text-white"
-                        : selectedNode?.index === node.index
-                          ? "bg-yellow-400 border-yellow-400 text-black"
-                          : currentExecutingLine === index
-                            ? "bg-primary border-primary animate-pulse text-white"
-                            : isOptimizedOut
-                              ? "bg-indigo-900 border-indigo-600 hover:bg-indigo-800 text-white"
-                              : node.isDuplicate
-                                ? "bg-destructive/70 border-destructive hover:bg-destructive/50 text-white"
-                                : node.duplicateCount > 1
-                                  ? "bg-teal-900 border-teal-600 hover:bg-teal-800 text-white"
-                                  : "bg-card border-primary/30 hover:bg-card/50 text-white"
-                    }`}
-                    onClick={() => handleAddressClick(node, index)}
-                  >
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center space-x-2">
-                        <span className="font-mono text-sm font-bold">
-                          A{index + 1} ({lineRef})
-                        </span>
-                        {isBeingSummoned && (
-                          <span className="text-xs text-secondary font-bold animate-pulse">🔮 SUMMONED</span>
-                        )}
-                        <span
-                          className={`px-2 py-1 rounded text-xs text-white font-medium ${getCategoryColor(node.category || "general")}`}
-                        >
-                          {node.category}
-                        </span>
-                        {node.duplicateCount > 1 && (
-                          <span className="text-xs text-teal-200 font-bold">×{node.duplicateCount}</span>
-                        )}
-                        {node.isDuplicate && (
-                          <span className="text-xs text-red-200 font-bold">→A{(node.referenceTo || 0) + 1}</span>
-                        )}
-                        {isOptimizedOut && <span className="text-xs text-indigo-200 font-bold">→{isOptimizedOut}</span>}
-                      </div>
-                      <Button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          summonAddress(lineRef)
-                        }}
-                        className="bg-secondary hover:bg-secondary/80 neon-border text-xs"
-                        disabled={!!runningBlock || activeSummons.length > 0}
-                      >
-                        Summon
-                      </Button>
-                    </div>
-                    <div className="text-xs text-gray-200 mt-1 truncate font-mono">{node.command}</div>
-
-                    {containingBlock && (
-                      <div className="text-xs text-blue-200 mt-1">
-                        In {containingBlock.id.toUpperCase()}: {containingBlock.lineComposition.join(" ")}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col bg-gradient-to-br from-black via-gray-900 to-black">
-          <div className="p-4 border-b border-primary/30 glass-effect">
-            <h2 className="text-xl font-bold text-primary">🧬 DNA Visualizer</h2>
-            <p className="text-muted-foreground">Explore the code structure in 3D or 2D</p>
-          </div>
-
-          <div className="flex-1 p-4 bg-gradient-to-br from-black via-gray-900 to-black cyber-grid">
-            {activeView === "3d" && isMounted ? (
-              <div className="w-full h-full neon-border rounded-lg overflow-hidden">
-                <Canvas camera={{ position: [40, 25, 40], fov: 60 }}>
-                  <ambientLight intensity={0.4} color="#6366f1" />
-                  <pointLight position={[10, 10, 10]} intensity={1} color="#8b5cf6" />
-                  <pointLight position={[-10, -10, -10]} intensity={0.5} color="#ffffff" />
-                  <DNASpiral
-                    nodes={spiralNodes}
-                    forkSpirals={forkSpirals}
-                    selectedNode={selectedNode}
-                    onNodeClick={setSelectedNode}
-                    onAddressClick={handleAddressClick}
-                    setSelectedFunctionCode={setSelectedFunctionCode}
-                    setShowCodeModal={setShowCodeModal}
-                  />
-                  <OrbitControls enablePan={true} enableZoom={true} enableRotate={true} />
-                </Canvas>
-              </div>
-            ) : activeView === "2d" ? (
-              <div className="w-full h-full neon-border rounded-lg overflow-hidden">
-                <BirdsEyeView
-                  nodes={spiralNodes}
-                  selectedNode={selectedNode}
-                  onNodeClick={setSelectedNode}
-                  expandedBlocks={expandedBlocks}
-                  runningBlock={runningBlock}
-                  setSelectedFunctionCode={setSelectedFunctionCode}
-                  setShowCodeModal={setShowCodeModal}
-                />
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-muted-foreground">Loading 3D visualization...</p>
-              </div>
+            {aiAgents.length === 0 && (
+              <p className="text-[#C0C0C0] text-center">No AI agents spawned. Create one from the Genome Tree.</p>
             )}
           </div>
-        </div>
 
-        <div className="w-1/3 glass-effect border-l border-primary/30">
-          <div className="p-4 border-b border-primary/30 bg-gradient-to-r from-card/50 to-transparent">
-            <h3 className="text-lg font-semibold text-secondary">🌪️ 2D Cyclone View</h3>
-            {runningBlock && (
-              <div className="text-sm text-primary mt-1 font-medium dna-pulse">Executing: {runningBlock.name}</div>
-            )}
+          <div className="border-t border-[#00FF00]/30 p-3">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!aiChatInput.trim() || aiAgents.length === 0) return
+
+                setAIChatMessages((prev) => [...prev, { role: "user", content: aiChatInput }])
+                aiDecisionMaking(aiAgents[0], aiChatInput).then((response) => {
+                  setAIChatMessages((prev) => [...prev, { role: "assistant", content: response }])
+                })
+                setAIChatInput("")
+              }}
+              className="flex gap-2"
+            >
+              <input
+                type="text"
+                value={aiChatInput}
+                onChange={(e) => setAIChatInput(e.target.value)}
+                placeholder="Ask AI agent..."
+                className="flex-1 bg-black border border-[#00FF00]/30 rounded px-3 py-2 text-[#39FF14] text-sm focus:outline-none focus:border-[#00FF00]"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-[#00FF00] text-black rounded hover:bg-[#39FF14] transition-colors font-bold text-sm"
+              >
+                Send
+              </button>
+            </form>
           </div>
-          <BirdsEyeView
-            nodes={spiralNodes}
-            selectedNode={selectedNode}
-            executingProcess={null}
-            functionBlocks={functionBlocks}
-            expandedBlocks={expandedBlocks}
-            setSelectedFunctionCode={setSelectedFunctionCode}
-            setShowCodeModal={setShowCodeModal}
-          />
         </div>
-      </div>
-
-      <FunctionCodeModal
-        isOpen={showCodeModal}
-        onClose={() => setShowCodeModal(false)}
-        functionData={selectedFunctionCode}
-      />
-
-      <footer className="border-t border-primary/30 bg-gradient-to-r from-card via-card/90 to-card glass-effect">
-        <div className="container mx-auto px-4 py-4">
-          <p className="text-center text-muted-foreground">
-            CodeMap Developer Platform - DNA-Based Development Environment
-          </p>
-        </div>
-      </footer>
+      )}
     </div>
   )
 }
-
-export default Page
